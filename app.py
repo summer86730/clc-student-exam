@@ -22,10 +22,10 @@ ADMIN_PW = st.secrets.get("admin_password", "CLC2026")
 # ══════════════════════════════════════════════════════
 DEFAULT_CONFIG = {
     "dates": [
-        {"en":"5/26 (Mon)","zh":"5/26 (一)","iso":"2025-05-26"},
-        {"en":"5/27 (Tue)","zh":"5/27 (二)","iso":"2025-05-27"},
-        {"en":"5/28 (Wed)","zh":"5/28 (三)","iso":"2025-05-28"},
-        {"en":"5/29 (Thu)","zh":"5/29 (四)","iso":"2025-05-29"},
+        {"en":"5/26 (Mon)","zh":"5/26 (一)","iso":"2026-05-26"},
+        {"en":"5/27 (Tue)","zh":"5/27 (二)","iso":"2026-05-27"},
+        {"en":"5/28 (Wed)","zh":"5/28 (三)","iso":"2026-05-28"},
+        {"en":"5/29 (Thu)","zh":"5/29 (四)","iso":"2026-05-29"},
     ],
     "sessions": [
         {"region":"us","flag":"🌎","name_zh":"美洲場","name_en":"Americas",
@@ -47,7 +47,7 @@ DEFAULT_CONFIG = {
         "registration_open": True,
         "deadline": "",
         "max_per_slot": 1,
-        "meet_links": {},   # key: "2025-05-26_eu" → URL
+        "meet_links": {},   # key: "2026-05-26_eu" → URL
     },
 }
 
@@ -191,7 +191,7 @@ def save_config(cfg):
 def derive(cfg):
     dates_en=[d["en"] for d in cfg["dates"]]
     dates_zh=[d["zh"] for d in cfg["dates"]]
-    dates_iso=[d.get("iso","2025-01-01") for d in cfg["dates"]]
+    dates_iso=[d.get("iso","2026-01-01") for d in cfg["dates"]]
     slots,local,early,reg=[],[],[],[]
     for sess in cfg["sessions"]:
         for s in sess["slots"]:
@@ -689,7 +689,7 @@ def screen_admin_dash():
         with st.container(border=True):
             s["registration_open"]=st.toggle("報名開放 Registration Open",value=s.get("registration_open",True))
             deadline_val=s.get("deadline","")
-            new_dl=st.text_input("截止時間 Deadline (YYYY-MM-DD HH:MM，留空=無限制)",value=deadline_val,placeholder="2025-05-25 23:59")
+            new_dl=st.text_input("截止時間 Deadline (YYYY-MM-DD HH:MM，留空=無限制)",value=deadline_val,placeholder="2026-05-25 23:59")
             s["deadline"]=new_dl
             s["max_per_slot"]=st.number_input("每時段名額上限 Max students per slot (0=無限制)",min_value=0,value=int(s.get("max_per_slot",1)),step=1)
 
@@ -721,7 +721,7 @@ def screen_admin_dash():
             with c4:
                 if len(draft["dates"])>1 and st.button("✕",key=f"rmd_{i}"): remove_di=i
         if remove_di is not None: draft["dates"].pop(remove_di); st.rerun()
-        if st.button("＋ 新增日期",key="add_date"): draft["dates"].append({"en":"New Date","zh":"日期","iso":"2025-01-01"}); st.rerun()
+        if st.button("＋ 新增日期",key="add_date"): draft["dates"].append({"en":"New Date","zh":"日期","iso":"2026-01-01"}); st.rerun()
 
         # ── Sessions config ────────────────────────────
         st.markdown("#### 🕐 場次與時區 Sessions")
