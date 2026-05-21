@@ -356,18 +356,23 @@ def screen_teacher_grid():
         offset    = 0 if is_am else 4
         cls       = "sec-am" if is_am else "sec-pm"
         title     = (
-            "🌎 Americas Session · 美洲場 — Taiwan TST morning / US previous evening"
+            "🌎 美洲場 Americas — 台灣早上 TST morning"
             if is_am else
-            "🇪🇺 Europe Session · 歐洲場 — Taiwan TST afternoon / European morning"
+            "🇪🇺 歐洲場 Europe — 台灣下午 TST afternoon"
         )
         st.markdown(f'<div class="{cls}">{title}</div>', unsafe_allow_html=True)
 
-        # Header row
+        # Header row — TST large & bold, local timezone small muted below
         cols = st.columns([1.8] + [1] * len(slots))
-        cols[0].markdown('<div class="bi"><span class="zh">日期</span><span class="en">Date</span></div>', unsafe_allow_html=True)
+        cols[0].markdown(
+            '<div style="font-size:.95rem;font-weight:600;color:var(--text-color)">日期</div>'
+            '<div style="font-size:.72rem;color:#aaa;margin-top:2px">Date</div>',
+            unsafe_allow_html=True
+        )
         for i, (t, lbl) in enumerate(zip(slots, local_lbl)):
             cols[i + 1].markdown(
-                f'<div class="bi"><span class="zh">{t} TST</span><span class="en">{lbl}</span></div>',
+                f'<div style="font-size:1rem;font-weight:700;color:var(--text-color);letter-spacing:-.3px">{t}</div>'
+                f'<div style="font-size:.7rem;font-weight:400;color:#aaa;margin-top:3px;line-height:1.4">{lbl}</div>',
                 unsafe_allow_html=True
             )
 
