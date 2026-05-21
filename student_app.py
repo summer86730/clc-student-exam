@@ -318,6 +318,29 @@ def send_email(to_addr: str, name: str, di: int, si: int) -> tuple[bool, str]:
         return False, str(e)
 
 
+def generate_gcal_url(name: str, di: int, si: int) -> str:
+    """Generate a Google Calendar 'add event' URL."""
+    import urllib.parse
+    date     = datetime.strptime(DATES_ISO[di], "%Y-%m-%d")
+    tst_hour = SLOT_TST_H[si]
+    dt_start = date.replace(hour=tst_hour) - timedelta(hours=8)
+    dt_end   = dt_start + timedelta(minutes=30)
+    fmt      = "%Y%m%dT%H%M%SZ"
+    session_label = "Americas" if SLOT_REG[si] == "us" else "Europe"
+    params = urllib.parse.urlencode({
+        "action":   "TEMPLATE",
+        "text":     f"CLC Oral Placement Interview ({session_label})",
+        "dates":    f"{dt_start.strftime(fmt)}/{dt_end.strftime(fmt)}",
+        "details":  (f"Registrant: {name}\n"
+                     f"Taiwan Time (TST): {ALL_SLOTS[si]}\n"
+                     f"Your local time: {ALL_LOCAL[si]}\n"
+                     f"Please join 20 min early at {ALL_EARLY[si]}\n"
+                     f"Zoom link will be sent by CLC staff."),
+        "location": "Zoom (link to be sent by CLC)",
+    })
+    return f"https://calendar.google.com/calendar/render?{params}"
+
+
 def email_configured() -> bool:
     try:
         return bool(st.secrets.get("email_sender")) and bool(st.secrets.get("email_password"))
@@ -343,7 +366,8 @@ st.markdown("""
 # SHARED: BOOKING CARD + EMAIL + ICS
 # ══════════════════════════════════════════════════════
 def render_booking_card(booking: dict, show_actions: bool = True):
-    """Render the green confirmed booking card, email input, and .ics download."""
+    """Render the green confirmed booking card, calendar buttons, and email."""
+    import base64
     di   = booking.get("di", 0)
     si   = booking.get("si", 0)
     name = booking.get("name", "")
@@ -364,15 +388,32 @@ def render_booking_card(booking: dict, show_actions: bool = True):
     if not show_actions:
         return
 
-    # ── .ics download ──────────────────────────────────
+    # ── Calendar buttons (mobile-compatible HTML links) ──
     ics_bytes = generate_ics(name, di, si)
-    st.download_button(
-        label="📅 Add to calendar / 加入行事曆 (.ics)",
-        data=ics_bytes,
-        file_name="clc_interview.ics",
-        mime="text/calendar",
-        use_container_width=True,
-        help="Works with Google Calendar, Apple Calendar, and Outlook / 支援 Google / Apple / Outlook 行事曆",
+    ics_b64   = base64.b64encode(ics_bytes).decode()
+    ics_uri   = f"data:text/calendar;base64,{ics_b64}"
+    gcal_url  = generate_gcal_url(name, di, si)
+
+    btn_style = (
+        "display:inline-flex;align-items:center;justify-content:center;gap:6px;"
+        "padding:10px 0;border-radius:8px;text-decoration:none;"
+        "font-size:.88rem;font-weight:500;width:100%;box-sizing:border-box;"
+    )
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'
+        # Google Calendar — opens in app/browser, best for mobile
+        f'<a href="{gcal_url}" target="_blank" style="{btn_style}'
+        f'background:#e6f1fb;color:#0c447c;border:1px solid #b5d4f4">'
+        f'📅 Google Calendar</a>'
+        # .ics — works on iOS Calendar, Outlook, Apple Calendar
+        f'<a href="{ics_uri}" download="clc_interview.ics" style="{btn_style}'
+        f'background:#f7f6f3;color:#1a1a18;border:1px solid #ddd">'
+        f'📎 Apple / Outlook (.ics)</a>'
+        f'</div>'
+        f'<div style="font-size:.72rem;color:#aaa;margin-bottom:10px;text-align:center">'
+        f'iOS: tap Apple/Outlook → open in Calendar app &nbsp;·&nbsp; Android: tap Google Calendar'
+        f'</div>',
+        unsafe_allow_html=True
     )
 
     # ── Optional email ─────────────────────────────────
