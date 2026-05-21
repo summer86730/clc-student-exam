@@ -125,20 +125,6 @@ STUDENT_TIMEZONES = [
     {"label": "🌐 Other UTC+12", "abbr": "UTC+12", "offset": 12},
 ]
 
-# 將相同時區的國家/地區整合，方便學生在 Streamlit 點選
-STREAMLIT_ZONE_OPTIONS = {
-    "日本 (Japan) [UTC+9]": "Asia/Tokyo",
-    "澳洲東岸 (Australia - Sydney) [UTC+10]": "Australia/Sydney",
-    "越南 (Vietnam) [UTC+7]": "Asia/Ho_Chi_Minh",
-    "印度 (India) [UTC+5.5]": "Asia/Kolkata",
-    "歐洲三國 (波蘭/德國/瑞士) [UTC+2]": "Europe/Warsaw",  # 三國夏季時間相同，推算基礎一致
-    "美國/加拿大 - 東岸 (New York / Toronto) [UTC-4]": "America/New_York",
-    "美國/加拿大 - 中部 (Chicago) [UTC-5]": "America/Chicago",
-    "美國 - 山區 (Denver) / 墨西哥 [UTC-6]": "America/Denver",
-    "美國/加拿大 - 西岸 (Los Angeles / Vancouver) [UTC-7]": "America/Los_Angeles",
-    "巴西 (Brazil - Sao Paulo) [UTC-3]": "America/Sao_Paulo",
-}
-
 TZ_LABELS = [t["label"] for t in STUDENT_TIMEZONES]
 TZ_BY_LABEL = {t["label"]: t for t in STUDENT_TIMEZONES}
 
