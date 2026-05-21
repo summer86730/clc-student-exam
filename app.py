@@ -59,6 +59,60 @@ DEFAULT_CONFIG = {
 }
 
 # ══════════════════════════════════════════════════════
+# TIMEZONE OPTIONS & AUTO-CALC
+# ══════════════════════════════════════════════════════
+TIMEZONE_OPTIONS = {
+    # Europe / Africa / Asia
+    "CET  (UTC+1) — 歐洲中部":    {"abbr": "CET",   "offset": 1},
+    "CEST (UTC+2) — 歐洲中部夏令": {"abbr": "CEST",  "offset": 2},
+    "EET  (UTC+2) — 東歐":        {"abbr": "EET",   "offset": 2},
+    "EEST (UTC+3) — 東歐夏令":    {"abbr": "EEST",  "offset": 3},
+    "MSK  (UTC+3) — 莫斯科":      {"abbr": "MSK",   "offset": 3},
+    "GST  (UTC+4) — 波斯灣":      {"abbr": "GST",   "offset": 4},
+    "IST  (UTC+5:30) — 印度":     {"abbr": "IST",   "offset": 5.5},
+    "WIB  (UTC+7) — 雅加達":      {"abbr": "WIB",   "offset": 7},
+    "CST  (UTC+8) — 台灣/中國":   {"abbr": "CST",   "offset": 8},
+    "JST  (UTC+9) — 日本/韓國":   {"abbr": "JST",   "offset": 9},
+    "AEST (UTC+10) — 澳洲東部":   {"abbr": "AEST",  "offset": 10},
+    # Americas
+    "EDT  (UTC-4) — 美東夏令":     {"abbr": "EDT",   "offset": -4},
+    "CDT  (UTC-5) — 美中夏令":     {"abbr": "CDT",   "offset": -5},
+    "MDT  (UTC-6) — 美山夏令":     {"abbr": "MDT",   "offset": -6},
+    "PDT  (UTC-7) — 美西夏令":     {"abbr": "PDT",   "offset": -7},
+    "AKDT (UTC-8) — 阿拉斯加":     {"abbr": "AKDT",  "offset": -8},
+    "HST  (UTC-10) — 夏威夷":      {"abbr": "HST",   "offset": -10},
+    "EST  (UTC-5) — 美東標準":     {"abbr": "EST",   "offset": -5},
+    "CST  (UTC-6) — 美中標準":     {"abbr": "CST_US","offset": -6},
+    "PST  (UTC-8) — 美西標準":     {"abbr": "PST",   "offset": -8},
+    "BRT  (UTC-3) — 巴西":        {"abbr": "BRT",   "offset": -3},
+}
+
+def calc_local_early(tst_str: str, tz_abbr: str, tz_offset: float) -> tuple:
+    """
+    Convert TST (UTC+8) time string to (local_time_str, early_str).
+    Handles crossing midnight and previous-day cases.
+    """
+    try:
+        h, m = map(int, tst_str.strip().replace("：",":").split(":"))
+    except Exception:
+        return tst_str, tst_str
+
+    tst_min   = h * 60 + m
+    utc_min   = tst_min - 480                       # TST = UTC+8 → subtract 8h
+    local_min = utc_min + int(tz_offset * 60)       # add target offset
+    early_min = local_min - 20                      # 20 min before
+
+    def fmt(total_min):
+        prev = total_min < 0
+        nxt  = total_min >= 1440
+        m2   = total_min % 1440
+        hh, mm = divmod(m2, 60)
+        prefix = "Prev. night " if prev else ("Next day " if nxt else "")
+        return f"{prefix}{tz_abbr} {hh:02d}:{mm:02d}"
+
+    return fmt(local_min), fmt(early_min)
+
+# ══════════════════════════════════════════════════════
 # CSS
 # ══════════════════════════════════════════════════════
 st.markdown("""
@@ -609,10 +663,10 @@ def screen_admin_dash():
         st.markdown("#### 🕐 場次與時區 Sessions & Timezone Labels")
 
         for si_s, sess in enumerate(draft["sessions"]):
-            is_am = sess.get("region","eu") == "us"
             exp_title = f"{sess.get('flag','🌐')} {sess.get('name_zh','')} / {sess.get('name_en','')}  ·  {len(sess['slots'])} 個時段"
             with st.expander(exp_title, expanded=True):
-                # Session metadata row
+
+                # ── Session metadata ──────────────────────────
                 c1, c2, c3, c4 = st.columns([0.8, 2, 2, 2])
                 with c1: sess["flag"]    = st.text_input("旗幟", value=sess.get("flag","🌐"), key=f"sf_{si_s}")
                 with c2: sess["name_zh"] = st.text_input("中文名稱", value=sess.get("name_zh",""), key=f"snz_{si_s}")
@@ -620,30 +674,96 @@ def screen_admin_dash():
                 with c4:
                     opts = ["us","eu","other"]
                     cur = sess.get("region","eu")
-                    idx_r = opts.index(cur) if cur in opts else 1
-                    sess["region"] = st.selectbox("區域代碼 Region code", options=opts, index=idx_r, key=f"sr_{si_s}",
-                                                   help="us = Americas, eu = Europe")
+                    sess["region"] = st.selectbox("區域代碼", options=opts,
+                        index=opts.index(cur) if cur in opts else 1, key=f"sr_{si_s}",
+                        help="us = Americas, eu = Europe")
 
-                st.markdown("**時段列表 Slots:**")
+                st.markdown('<div style="height:.25rem"></div>', unsafe_allow_html=True)
+
+                # ── Timezone auto-calc ────────────────────────
+                st.markdown("**🌐 時區自動計算**")
+                st.caption("① 先填台灣時間  ② 選時區  ③ 按「🔄 自動填入」→ 當地時間與提前上線自動算出")
+
+                tz_keys = list(TIMEZONE_OPTIONS.keys())
+                saved_tz  = sess.get("_tz_name", tz_keys[0])
+                saved_idx = tz_keys.index(saved_tz) if saved_tz in tz_keys else 0
+
+                tz_col, btn_col = st.columns([3, 1])
+                with tz_col:
+                    sel_tz_name = st.selectbox(
+                        "選擇時區 Select timezone", options=tz_keys, index=saved_idx,
+                        key=f"sess_tz_{si_s}")
+                    sess["_tz_name"] = sel_tz_name
+                with btn_col:
+                    st.markdown('<div style="height:1.75rem"></div>', unsafe_allow_html=True)
+                    do_calc = st.button("🔄 自動填入", key=f"auto_tz_{si_s}",
+                                        use_container_width=True,
+                                        help="根據台灣時間與所選時區，自動計算當地時間和提前上線時間")
+
+                # Handle auto-calc button
+                if do_calc:
+                    tz_info = TIMEZONE_OPTIONS[sel_tz_name]
+                    for j, slot in enumerate(sess["slots"]):
+                        tst_val = st.session_state.get(f"st_{si_s}_{j}", slot.get("tst",""))
+                        if tst_val.strip():
+                            l, e = calc_local_early(tst_val, tz_info["abbr"], tz_info["offset"])
+                            # Force-update widget states so inputs reflect new values
+                            st.session_state[f"sl_{si_s}_{j}"] = l
+                            st.session_state[f"se_{si_s}_{j}"] = e
+                            slot["local"] = l
+                            slot["early"] = e
+                    st.rerun()
+
+                # Live preview strip (shows calc result without clicking save)
+                tz_info_cur = TIMEZONE_OPTIONS.get(sel_tz_name, list(TIMEZONE_OPTIONS.values())[0])
+                preview_parts = []
+                for j, slot in enumerate(sess["slots"]):
+                    tst = st.session_state.get(f"st_{si_s}_{j}", slot.get("tst",""))
+                    if tst.strip():
+                        loc, _ = calc_local_early(tst, tz_info_cur["abbr"], tz_info_cur["offset"])
+                        preview_parts.append(f"**{tst}** → {loc}")
+                if preview_parts:
+                    st.markdown(
+                        '<div style="background:#eaf3de;border-radius:6px;padding:6px 12px;'
+                        'font-size:.78rem;color:#27500a;margin:4px 0 8px">'
+                        '預覽 / Preview: ' + "  ·  ".join(preview_parts) + '</div>',
+                        unsafe_allow_html=True)
+
+                # ── Slot rows ─────────────────────────────────
+                st.markdown("**時段列表 Slots**")
                 hdr2 = st.columns([1.5, 2.5, 2.5, 0.4])
-                for h2, t2 in zip(hdr2, ["台灣時間 TST","當地時間 Local time","提前上線 Early (20 min)",""]): 
-                    h2.markdown(f"<div style='font-size:.78rem;color:#888'>{t2}</div>", unsafe_allow_html=True)
+                for h2, t2 in zip(hdr2, [
+                    "⬇️ 台灣時間 TST",
+                    "當地時間 Local（按🔄自動填入）",
+                    "提前上線 Early（按🔄自動填入）", ""]):
+                    h2.markdown(f"<div style='font-size:.75rem;color:#888'>{t2}</div>", unsafe_allow_html=True)
 
                 remove_slot = None
                 for j, slot in enumerate(sess["slots"]):
                     sc1, sc2, sc3, sc4 = st.columns([1.5, 2.5, 2.5, 0.4])
-                    with sc1: slot["tst"]   = st.text_input("tst",   value=slot.get("tst",""),   key=f"st_{si_s}_{j}", label_visibility="collapsed")
-                    with sc2: slot["local"] = st.text_input("local", value=slot.get("local",""), key=f"sl_{si_s}_{j}", label_visibility="collapsed")
-                    with sc3: slot["early"] = st.text_input("early", value=slot.get("early",""), key=f"se_{si_s}_{j}", label_visibility="collapsed")
+                    with sc1:
+                        new_tst = st.text_input("tst", value=slot.get("tst",""),
+                            key=f"st_{si_s}_{j}", label_visibility="collapsed", placeholder="HH:MM")
+                        slot["tst"] = new_tst
+                    with sc2:
+                        new_local = st.text_input("local", value=slot.get("local",""),
+                            key=f"sl_{si_s}_{j}", label_visibility="collapsed",
+                            placeholder="auto-filled after 🔄")
+                        slot["local"] = new_local
+                    with sc3:
+                        new_early = st.text_input("early", value=slot.get("early",""),
+                            key=f"se_{si_s}_{j}", label_visibility="collapsed",
+                            placeholder="auto-filled after 🔄")
+                        slot["early"] = new_early
                     with sc4:
-                        if len(sess["slots"]) > 1 and st.button("✕", key=f"rms_{si_s}_{j}", help="Remove slot"):
+                        if len(sess["slots"]) > 1 and st.button("✕", key=f"rms_{si_s}_{j}"):
                             remove_slot = j
 
                 if remove_slot is not None:
                     sess["slots"].pop(remove_slot); st.rerun()
 
                 if st.button(f"＋ 新增時段 Add slot", key=f"adds_{si_s}"):
-                    sess["slots"].append({"tst":"12:00","local":"Local time","early":"11:40 local"})
+                    sess["slots"].append({"tst":"","local":"","early":""})
                     st.rerun()
 
         # ── Save / Reset to defaults ─────────────────────
