@@ -24,7 +24,7 @@ st.set_page_config(
 # ══════════════════════════════════════════════════════
 DATES_EN  = ["5/26 (Mon)", "5/27 (Tue)", "5/28 (Wed)", "5/29 (Thu)"]
 DATES_ZH  = ["5/26 (一)",  "5/27 (二)",  "5/28 (三)",  "5/29 (四)"]
-DATES_ISO = ["2025-05-26", "2025-05-27", "2025-05-28", "2025-05-29"]
+DATES_ISO = ["2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29"]
 AM_SLOTS  = ["08:00", "09:00", "10:00", "11:00"]
 PM_SLOTS  = ["14:00", "15:00", "16:00", "17:00"]
 ALL_SLOTS  = AM_SLOTS + PM_SLOTS
@@ -34,7 +34,7 @@ SLOT_REG   = ["us"] * 4 + ["eu"] * 4
 # ══════════════════════════════════════════════════════
 # STUDENT TIMEZONE LIST
 # Countries/regions shown to students for local time calc
-# offset = UTC offset in hours (for May 2025, use summer/DST values)
+# offset = UTC offset in hours (for May 2026, use summer/DST values)
 # ══════════════════════════════════════════════════════
 STUDENT_TIMEZONES = [
     # ── East Asia ──────────────────────────────────────
@@ -61,7 +61,7 @@ STUDENT_TIMEZONES = [
     {"label": "🇮🇷 Iran / 伊朗",                     "abbr": "IRST",  "offset": 4.5},
     {"label": "🇹🇷 Turkey / 土耳其",                 "abbr": "TRT",   "offset": 3},
     {"label": "🇰🇿 Kazakhstan (Almaty)",              "abbr": "ALMT",  "offset": 6},
-    # ── Europe (May 2025 = summer time) ────────────────
+    # ── Europe (May 2026 = summer time) ────────────────
     {"label": "🇩🇪 Germany / 德國 (CEST UTC+2)",     "abbr": "CEST",  "offset": 2},
     {"label": "🇨🇭 Switzerland / 瑞士 (CEST UTC+2)", "abbr": "CEST",  "offset": 2},
     {"label": "🇦🇹 Austria / 奧地利 (CEST UTC+2)",   "abbr": "CEST",  "offset": 2},
@@ -254,7 +254,7 @@ def generate_ics(name: str, di: int, si: int) -> bytes:
     alarm_utc = dt_start - timedelta(minutes=20)
     fmt       = "%Y%m%dT%H%M%SZ"
     ics = (
-        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//CLC NCKU//Oral Exam 2025//EN\r\n"
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//CLC NCKU//Oral Exam 2026//EN\r\n"
         "CALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nBEGIN:VEVENT\r\n"
         f"DTSTART:{dt_start.strftime(fmt)}\r\nDTEND:{dt_end.strftime(fmt)}\r\n"
         f"SUMMARY:CLC Oral Placement Interview\r\n"
@@ -395,7 +395,7 @@ st.markdown("""
   <div class="clc-logo">🎓</div>
   <div>
     <div class="clc-title">CLC Oral Placement Interview</div>
-    <div class="clc-sub">Chinese Language Center · NCKU &nbsp;·&nbsp; 5/26–5/29, 2025 &nbsp;·&nbsp; 線上口試報名</div>
+    <div class="clc-sub">Chinese Language Center · NCKU &nbsp;·&nbsp; 5/26–5/29, 2026 &nbsp;·&nbsp; 線上口試報名</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
