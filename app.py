@@ -168,6 +168,23 @@ def db_get_all(path: str) -> dict:
             return {}
     return data if isinstance(data, dict) else {}
 
+def db_delete(path: str):
+    """Delete a node from Firebase or local store."""
+    if FIREBASE_OK:
+        _fb.reference(path).delete()
+    else:
+        data = _local_load()
+        keys = path.strip("/").split("/")
+        d = data
+        for k in keys[:-1]:
+            if isinstance(d, dict) and k in d:
+                d = d[k]
+            else:
+                return
+        if isinstance(d, dict) and keys[-1] in d:
+            del d[keys[-1]]
+        _local_save(data)
+
 # ══════════════════════════════════════════════════════
 # SESSION STATE INIT
 # ══════════════════════════════════════════════════════
@@ -469,91 +486,246 @@ def screen_admin_dash():
         unsafe_allow_html=True
     )
 
-    st.markdown(bi("各時段老師確認人數 · 勾選開放給學生的時段",
-                   "Teacher count per slot · Check to publish slots to students"),
-                unsafe_allow_html=True)
+    # ── Tab navigation ──────────────────────────────────
+    tab_slots, tab_teachers, tab_students = st.tabs([
+        "🔓 開放時段管理",
+        "🧑‍🏫 老師空堂總覽",
+        "🎓 學生報名狀況",
+    ])
 
-    # ── Slot grid ──
-    def slot_section(is_am: bool):
-        slots  = AM_SLOTS if is_am else PM_SLOTS
-        offset = 0 if is_am else 4
-        cls    = "sec-am" if is_am else "sec-pm"
-        label  = ("🌎 Americas · 美洲場" if is_am else "🇪🇺 Europe · 歐洲場")
-        st.markdown(f'<div class="{cls}">{label}</div>', unsafe_allow_html=True)
+    # ══════════════════════════════════════
+    # TAB 1: 開放時段管理
+    # ══════════════════════════════════════
+    with tab_slots:
+        st.markdown(bi("各時段老師確認人數 · 勾選開放給學生的時段",
+                       "Teacher count per slot · Check to publish slots to students"),
+                    unsafe_allow_html=True)
 
-        hdr = st.columns([1.6] + [1] * len(slots))
-        hdr[0].markdown('<div class="bi"><span class="zh">日期</span><span class="en">Date</span></div>', unsafe_allow_html=True)
-        for i, t in enumerate(slots):
-            hdr[i + 1].markdown(f"**{t}**", unsafe_allow_html=False)
+        def slot_section(is_am: bool):
+            slots  = AM_SLOTS if is_am else PM_SLOTS
+            offset = 0 if is_am else 4
+            cls    = "sec-am" if is_am else "sec-pm"
+            label  = ("🌎 Americas · 美洲場" if is_am else "🇪🇺 Europe · 歐洲場")
+            st.markdown(f'<div class="{cls}">{label}</div>', unsafe_allow_html=True)
 
-        for di, (d_en, d_zh) in enumerate(zip(DATES_EN, DATES_ZH)):
-            cols = st.columns([1.6] + [1] * len(slots))
-            cols[0].markdown(
-                f'<div class="bi"><span class="zh">{d_zh}</span><span class="en">{d_en}</span></div>',
-                unsafe_allow_html=True
-            )
-            for i in range(len(slots)):
-                si  = offset + i
-                n   = counts[di][si]
-                key = f"{di}_{si}"
-                with cols[i + 1]:
-                    st.markdown(badge(n), unsafe_allow_html=True)
-                    if n >= 3:
-                        checked = key in st.session_state.admin_open
-                        if st.checkbox("開放", value=checked, key=f"adm_{key}"):
-                            if key not in st.session_state.admin_open:
-                                st.session_state.admin_open.append(key)
+            hdr = st.columns([1.6] + [1] * len(slots))
+            hdr[0].markdown('<div class="bi"><span class="zh">日期</span><span class="en">Date</span></div>', unsafe_allow_html=True)
+            for i, t in enumerate(slots):
+                hdr[i + 1].markdown(f"**{t}**")
+
+            for di, (d_en, d_zh) in enumerate(zip(DATES_EN, DATES_ZH)):
+                cols = st.columns([1.6] + [1] * len(slots))
+                cols[0].markdown(
+                    f'<div class="bi"><span class="zh">{d_zh}</span><span class="en">{d_en}</span></div>',
+                    unsafe_allow_html=True
+                )
+                for i in range(len(slots)):
+                    si  = offset + i
+                    n   = counts[di][si]
+                    key = f"{di}_{si}"
+                    with cols[i + 1]:
+                        st.markdown(badge(n), unsafe_allow_html=True)
+                        if n >= 3:
+                            checked = key in st.session_state.admin_open
+                            if st.checkbox("開放", value=checked, key=f"adm_{key}"):
+                                if key not in st.session_state.admin_open:
+                                    st.session_state.admin_open.append(key)
+                            else:
+                                if key in st.session_state.admin_open:
+                                    st.session_state.admin_open.remove(key)
+
+        with st.container(border=True):
+            slot_section(True)
+            st.markdown('<div style="height:.5rem"></div>', unsafe_allow_html=True)
+            slot_section(False)
+
+        n_open = len(st.session_state.admin_open)
+        if st.button(
+            f"🔓 確認開放 {n_open} 個時段 / Publish {n_open} slot{'s' if n_open != 1 else ''}",
+            type="primary", use_container_width=True
+        ):
+            slots_to_save = [
+                {"di": int(k.split("_")[0]), "si": int(k.split("_")[1])}
+                for k in st.session_state.admin_open
+            ]
+            db_set("open_slots", slots_to_save)
+            st.session_state.open_slots = slots_to_save
+            st.success(f"✅ 已開放 {n_open} 個時段！/ {n_open} slot(s) published!")
+
+    # ══════════════════════════════════════
+    # TAB 2: 老師空堂總覽 (NEW)
+    # ══════════════════════════════════════
+    with tab_teachers:
+        st.markdown(bi("所有老師填寫的空堂時間 · 管理員可新增、修改或刪除",
+                       "All teacher availability · Admin can add, edit or delete"),
+                    unsafe_allow_html=True)
+
+        teachers_raw = db_get_all("teachers")
+
+        if not teachers_raw:
+            st.info("尚無老師填寫空堂。/ No teacher data yet.")
+        else:
+            import pandas as pd
+
+            # ── Per-teacher expandable blocks ──────────────
+            for t_name, avail in teachers_raw.items():
+                if not isinstance(avail, list):
+                    continue
+
+                # Count how many slots this teacher marked
+                total_checked = sum(1 for row in avail for v in row if v)
+
+                with st.expander(f"🧑‍🏫 {t_name}  ·  {total_checked} 個時段可用", expanded=False):
+                    # Build display table
+                    rows = []
+                    for di in range(N_D):
+                        for si in range(N_S):
+                            try:
+                                checked = bool(avail[di][si])
+                            except (IndexError, TypeError):
+                                checked = False
+                            if checked:
+                                is_am = si < 4
+                                rows.append({
+                                    "日期 Date": f"{DATES_ZH[di]} {DATES_EN[di]}",
+                                    "台灣時間 TST": ALL_SLOTS[si],
+                                    "場次": "🌎 美洲場" if is_am else "🇪🇺 歐洲場",
+                                    "當地時間 Local": ALL_LOCAL[si],
+                                })
+
+                    if rows:
+                        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                    else:
+                        st.caption("此老師尚未勾選任何時段。/ No slots selected yet.")
+
+                    col_edit, col_del = st.columns([3, 1])
+                    with col_edit:
+                        st.caption("修改：請請老師自行重新登入老師頁面更新。/ To edit: teacher logs in to update their own row.")
+                    with col_del:
+                        # Two-step confirm delete
+                        confirm_key = f"confirm_del_{t_name}"
+                        if st.session_state.get(confirm_key):
+                            st.error(f"確定刪除 {t_name}？")
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                if st.button("✅ 確定刪除", key=f"do_del_{t_name}", use_container_width=True):
+                                    db_delete(f"teachers/{t_name}")
+                                    st.session_state[confirm_key] = False
+                                    load_counts()
+                                    st.success(f"已刪除 {t_name} 的空堂資料。")
+                                    st.rerun()
+                            with c2:
+                                if st.button("❌ 取消", key=f"cancel_del_{t_name}", use_container_width=True):
+                                    st.session_state[confirm_key] = False
+                                    st.rerun()
                         else:
-                            if key in st.session_state.admin_open:
-                                st.session_state.admin_open.remove(key)
+                            if st.button(f"🗑️ 刪除", key=f"del_{t_name}", use_container_width=True):
+                                st.session_state[confirm_key] = True
+                                st.rerun()
 
-    with st.container(border=True):
-        slot_section(True)
-        st.markdown('<div style="height:.5rem"></div>', unsafe_allow_html=True)
-        slot_section(False)
+        st.divider()
 
-    n_open = len(st.session_state.admin_open)
-    if st.button(
-        f"🔓 確認開放 {n_open} 個時段 / Publish {n_open} slot{'s' if n_open != 1 else ''}",
-        type="primary", use_container_width=True
-    ):
-        slots_to_save = [
-            {"di": int(k.split("_")[0]), "si": int(k.split("_")[1])}
-            for k in st.session_state.admin_open
-        ]
-        db_set("open_slots", slots_to_save)
-        st.session_state.open_slots = slots_to_save
-        st.success(f"✅ 已開放 {n_open} 個時段！/ {n_open} slot(s) published!")
+        # ── Add teacher manually ────────────────────────
+        with st.expander("➕ 手動新增老師空堂 / Manually add a teacher's availability"):
+            st.caption("若老師無法自行填寫，管理員可代為新增。")
+            new_name = st.text_input("老師姓名 Teacher name", key="new_t_name", placeholder="例：林老師")
+            st.markdown("**選擇可用時段 Select available slots：**")
 
-    # ── Student registrations ──
-    st.divider()
-    students = st.session_state.students
-    st.markdown(bi(f"學生報名狀況（{len(students)} 人）",
-                   f"Student registrations ({len(students)} total)"),
-                unsafe_allow_html=True)
+            # Mini grid for manual add
+            new_avail = [[False]*N_S for _ in range(N_D)]
 
-    if not students:
-        st.caption("尚無學生報名。開放時段後通知學生填寫。  \nNo registrations yet. Notify students after publishing slots.")
-    else:
-        rows = []
-        for s in students.values():
-            if not isinstance(s, dict):
-                continue
-            di, si = s.get("di", 0), s.get("si", 0)
-            rows.append({
-                "姓名 / Name": s.get("name", ""),
-                "區域 / Region": ("🇪🇺 Europe" if s.get("region") == "eu" else "🌎 Americas"),
-                "日期 / Date": f"{DATES_ZH[di]} {DATES_EN[di]}",
-                "台灣時段 TST": ALL_SLOTS[si],
-                "當地時間 Local": ALL_LOCAL[si],
-                "提前上線 Join early": ALL_EARLY[si],
-            })
-        import pandas as pd
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            def mini_section(is_am_):
+                slots_ = AM_SLOTS if is_am_ else PM_SLOTS
+                offset_ = 0 if is_am_ else 4
+                label_ = "🌎 美洲場 08:00–11:00 TST" if is_am_ else "🇪🇺 歐洲場 14:00–17:00 TST"
+                st.markdown(f"*{label_}*")
+                hdr_ = st.columns([1.6] + [1]*len(slots_))
+                hdr_[0].markdown("**日期**")
+                for i_, t_ in enumerate(slots_):
+                    hdr_[i_+1].markdown(f"**{t_}**")
+                for di_ in range(N_D):
+                    cols_ = st.columns([1.6] + [1]*len(slots_))
+                    cols_[0].write(f"{DATES_ZH[di_]}")
+                    for i_ in range(len(slots_)):
+                        si_ = offset_ + i_
+                        v = cols_[i_+1].checkbox(
+                            "", key=f"new_t_{di_}_{si_}", label_visibility="collapsed"
+                        )
+                        new_avail[di_][si_] = v
 
-    if st.button("↻ Refresh student list / 重新整理", key="refresh_students"):
-        load_students()
-        st.rerun()
+            mini_section(True)
+            mini_section(False)
+
+            if st.button("💾 儲存新老師空堂 / Save", type="primary", use_container_width=True, key="save_new_teacher"):
+                n = new_name.strip()
+                if not n:
+                    st.error("請輸入老師姓名。")
+                else:
+                    db_set(f"teachers/{n}", new_avail)
+                    load_counts()
+                    st.success(f"✅ 已儲存 {n} 的空堂資料！")
+                    st.rerun()
+
+    # ══════════════════════════════════════
+    # TAB 3: 學生報名狀況
+    # ══════════════════════════════════════
+    with tab_students:
+        students = st.session_state.students
+        st.markdown(bi(f"學生報名狀況（{len(students)} 人）",
+                       f"Student registrations ({len(students)} total)"),
+                    unsafe_allow_html=True)
+
+        if not students:
+            st.caption("尚無學生報名。開放時段後通知學生填寫。\nNo registrations yet.")
+        else:
+            import pandas as pd
+            rows = []
+            for s_key, s in students.items():
+                if not isinstance(s, dict):
+                    continue
+                di, si = s.get("di", 0), s.get("si", 0)
+                rows.append({
+                    "_key": s_key,
+                    "姓名 / Name": s.get("name", ""),
+                    "區域 / Region": ("🇪🇺 Europe" if s.get("region") == "eu" else "🌎 Americas"),
+                    "日期 / Date": f"{DATES_ZH[di]} {DATES_EN[di]}",
+                    "台灣時段 TST": ALL_SLOTS[si],
+                    "當地時間 Local": ALL_LOCAL[si],
+                    "提前上線 Join early": ALL_EARLY[si],
+                })
+
+            display_df = pd.DataFrame(rows).drop(columns=["_key"])
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+            st.divider()
+            st.markdown("**刪除學生報名紀錄 / Delete a student registration**")
+            student_names = [r["_key"] for r in rows]
+            del_name = st.selectbox("選擇要刪除的學生 Select student", options=["— 請選擇 —"] + student_names)
+
+            confirm_s_key = "confirm_del_student"
+            if del_name and del_name != "— 請選擇 —":
+                if st.session_state.get(confirm_s_key) == del_name:
+                    st.error(f"確定刪除 {del_name} 的報名紀錄？")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("✅ 確定刪除", key="do_del_student", use_container_width=True):
+                            db_delete(f"students/{del_name}")
+                            st.session_state[confirm_s_key] = None
+                            load_students()
+                            st.success(f"已刪除 {del_name} 的報名紀錄。")
+                            st.rerun()
+                    with c2:
+                        if st.button("❌ 取消", key="cancel_del_student", use_container_width=True):
+                            st.session_state[confirm_s_key] = None
+                            st.rerun()
+                else:
+                    if st.button(f"🗑️ 刪除 {del_name} 的報名紀錄", use_container_width=True):
+                        st.session_state[confirm_s_key] = del_name
+                        st.rerun()
+
+        if st.button("↻ Refresh / 重新整理", key="refresh_students"):
+            load_students()
+            st.rerun()
 
 # ══════════════════════════════════════════════════════
 # SCREEN: STUDENT IDENTIFY
