@@ -600,7 +600,7 @@ def screen_admin_dash():
 
                     col_edit, col_del = st.columns([3, 1])
                     with col_edit:
-                        st.caption("修改：請請老師自行重新登入老師頁面更新。/ To edit: teacher logs in to update their own row.")
+                        st.caption("修改：請老師自行重新登入老師頁面更新。/ To edit: teacher logs in to update their own row.")
                     with col_del:
                         # Two-step confirm delete
                         confirm_key = f"confirm_del_{t_name}"
