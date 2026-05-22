@@ -1,18 +1,16 @@
 """
-CLC Oral Exam Registration System v4
-+ Google Meet links per date/session
-+ Slot capacity limits
-+ Registration open/close + deadline
-+ Analytics dashboard
-+ CSV export + bulk email
-+ Teacher confirmed schedule + quick-select
+CLC Oral Exam System v5
+- Time slots: 08:10-09:00 format (50-min interviews, 10-min breaks)
+- Teacher view: read-only schedule (admin assigns teachers)
+- Sessions: country-based groups (admin-configurable)
+- Pre-loaded teacher schedule from 5/27-5/29
 """
 
 import streamlit as st
 import json, os, copy
 from datetime import datetime
 
-st.set_page_config(page_title="CLC Oral Exam 口試報名", page_icon="🎓",
+st.set_page_config(page_title="CLC 口試排程系統", page_icon="🎓",
                    layout="centered", initial_sidebar_state="collapsed")
 
 ADMIN_PW = st.secrets.get("admin_password", "CLC2026")
@@ -22,62 +20,95 @@ ADMIN_PW = st.secrets.get("admin_password", "CLC2026")
 # ══════════════════════════════════════════════════════
 DEFAULT_CONFIG = {
     "dates": [
-        {"en":"5/26 (Mon)","zh":"5/26 (一)","iso":"2026-05-26"},
-        {"en":"5/27 (Tue)","zh":"5/27 (二)","iso":"2026-05-27"},
-        {"en":"5/28 (Wed)","zh":"5/28 (三)","iso":"2026-05-28"},
-        {"en":"5/29 (Thu)","zh":"5/29 (四)","iso":"2026-05-29"},
+        {"en":"5/27 (Wed)","zh":"5/27 星期三","iso":"2025-05-27"},
+        {"en":"5/28 (Thu)","zh":"5/28 星期四","iso":"2025-05-28"},
+        {"en":"5/29 (Fri)","zh":"5/29 星期五","iso":"2025-05-29"},
     ],
     "sessions": [
-        {"region":"us","flag":"🌎","name_zh":"美洲場","name_en":"Americas",
-         "slots":[
-             {"tst":"08:00","local":"Prev. night EDT 20:00","early":"Prev. night EDT 19:40"},
-             {"tst":"09:00","local":"EDT 21:00","early":"EDT 20:40"},
-             {"tst":"10:00","local":"EDT 22:00","early":"EDT 21:40"},
-             {"tst":"11:00","local":"EDT 23:00","early":"EDT 22:40"},
-         ]},
-        {"region":"eu","flag":"🇪🇺","name_zh":"歐洲場","name_en":"Europe",
-         "slots":[
-             {"tst":"14:00","local":"CET 07:00","early":"CET 06:40"},
-             {"tst":"15:00","local":"CET 08:00","early":"CET 07:40"},
-             {"tst":"16:00","local":"CET 09:00","early":"CET 08:40"},
-             {"tst":"17:00","local":"CET 10:00","early":"CET 09:40"},
-         ]},
+        {
+            "id":"asia",
+            "flag":"🌏","name_zh":"亞太場","name_en":"Asia-Pacific",
+            "countries":"日本,越南,澳洲,印度,韓國,新加坡,菲律賓,泰國,印尼",
+            "tz_preview":"JST (UTC+9)",
+            "slots":[
+                {"tst":"08:10","local":"JST 09:10","early":"JST 08:50"},
+                {"tst":"09:10","local":"JST 10:10","early":"JST 09:50"},
+                {"tst":"10:10","local":"JST 11:10","early":"JST 10:50"},
+                {"tst":"11:10","local":"JST 12:10","early":"JST 11:50"},
+            ],
+        },
+        {
+            "id":"eu",
+            "flag":"🇪🇺","name_zh":"歐洲場","name_en":"Europe",
+            "countries":"波蘭,德國,瑞士,法國,英國,義大利,西班牙,荷蘭,奧地利,捷克,匈牙利,瑞典",
+            "tz_preview":"CEST (UTC+2)",
+            "slots":[
+                {"tst":"13:10","local":"CEST 07:10","early":"CEST 06:50"},
+                {"tst":"14:10","local":"CEST 08:10","early":"CEST 07:50"},
+                {"tst":"15:10","local":"CEST 09:10","early":"CEST 08:50"},
+                {"tst":"16:10","local":"CEST 10:10","early":"CEST 09:50"},
+            ],
+        },
+        {
+            "id":"us",
+            "flag":"🌎","name_zh":"美洲場","name_en":"Americas",
+            "countries":"美國,加拿大,墨西哥,巴西,阿根廷,哥倫比亞,智利",
+            "tz_preview":"EDT (UTC-4)",
+            "slots":[
+                {"tst":"08:10","local":"EDT prev 20:10","early":"EDT prev 19:50"},
+                {"tst":"09:10","local":"EDT prev 21:10","early":"EDT prev 20:50"},
+                {"tst":"10:10","local":"EDT prev 22:10","early":"EDT prev 21:50"},
+                {"tst":"11:10","local":"EDT prev 23:10","early":"EDT prev 22:50"},
+            ],
+        },
     ],
+    # Pre-filled teacher assignments from schedule image
+    "teacher_slots": {
+        "2025-05-27_08:10": "芝彤 / 碧眞",
+        "2025-05-27_09:10": "芝彤 / 碧眞",
+        "2025-05-27_13:10": "怡慧 / 正芬",
+        "2025-05-27_14:10": "怡慧 / 正芬",
+        "2025-05-28_08:10": "芝彤 / 碧眞",
+        "2025-05-28_09:10": "芝彤 / 碧眞",
+        "2025-05-28_10:10": "育諾 / 怡慧",
+        "2025-05-28_11:10": "育諾 / 怡慧",
+        "2025-05-28_13:10": "琁婷 / 育諾",
+        "2025-05-28_14:10": "琁婷 / 育諾",
+        "2025-05-29_15:10": "琁婷 / 育諾",
+        "2025-05-29_16:10": "琁婷 / 好靜",
+    },
     "settings": {
         "registration_open": True,
         "deadline": "",
-        "max_per_slot": 1,
-        "meet_links": {},   # key: "2026-05-26_eu" → URL
+        "max_per_slot": 3,
+        "meet_links": {},
     },
 }
 
-# ══════════════════════════════════════════════════════
-# TIMEZONE AUTO-CALC
-# ══════════════════════════════════════════════════════
 TIMEZONE_OPTIONS = {
-    "CET  (UTC+1) — 歐洲中部":     {"abbr":"CET",   "offset":1},
-    "CEST (UTC+2) — 歐洲中部夏令":  {"abbr":"CEST",  "offset":2},
-    "EET  (UTC+2) — 東歐":         {"abbr":"EET",   "offset":2},
-    "EEST (UTC+3) — 東歐夏令":     {"abbr":"EEST",  "offset":3},
-    "MSK  (UTC+3) — 莫斯科":       {"abbr":"MSK",   "offset":3},
-    "GST  (UTC+4) — 波斯灣":       {"abbr":"GST",   "offset":4},
-    "IST  (UTC+5:30) — 印度":      {"abbr":"IST",   "offset":5.5},
-    "WIB  (UTC+7) — 雅加達":       {"abbr":"WIB",   "offset":7},
-    "JST  (UTC+9) — 日本/韓國":    {"abbr":"JST",   "offset":9},
-    "AEST (UTC+10) — 澳洲東部":    {"abbr":"AEST",  "offset":10},
-    "EDT  (UTC-4) — 美東夏令":      {"abbr":"EDT",   "offset":-4},
-    "CDT  (UTC-5) — 美中夏令":      {"abbr":"CDT",   "offset":-5},
-    "MDT  (UTC-6) — 美山夏令":      {"abbr":"MDT",   "offset":-6},
-    "PDT  (UTC-7) — 美西夏令":      {"abbr":"PDT",   "offset":-7},
-    "BRT  (UTC-3) — 巴西":         {"abbr":"BRT",   "offset":-3},
+    "CET  (UTC+1) — 歐洲中部":   {"abbr":"CET",  "offset":1},
+    "CEST (UTC+2) — 歐洲夏令":   {"abbr":"CEST", "offset":2},
+    "EET  (UTC+2) — 東歐":       {"abbr":"EET",  "offset":2},
+    "EEST (UTC+3) — 東歐夏令":   {"abbr":"EEST", "offset":3},
+    "MSK  (UTC+3) — 莫斯科":     {"abbr":"MSK",  "offset":3},
+    "GST  (UTC+4) — 波斯灣":     {"abbr":"GST",  "offset":4},
+    "IST  (UTC+5:30) — 印度":    {"abbr":"IST",  "offset":5.5},
+    "WIB  (UTC+7) — 雅加達":     {"abbr":"WIB",  "offset":7},
+    "JST  (UTC+9) — 日本/韓國":  {"abbr":"JST",  "offset":9},
+    "AEST (UTC+10) — 澳洲東部":  {"abbr":"AEST", "offset":10},
+    "EDT  (UTC-4) — 美東夏令":   {"abbr":"EDT",  "offset":-4},
+    "CDT  (UTC-5) — 美中夏令":   {"abbr":"CDT",  "offset":-5},
+    "PDT  (UTC-7) — 美西夏令":   {"abbr":"PDT",  "offset":-7},
+    "BRT  (UTC-3) — 巴西":      {"abbr":"BRT",  "offset":-3},
 }
 
 def calc_local_early(tst_str, tz_abbr, tz_offset):
-    try: h, m = map(int, tst_str.strip().split(":"))
+    try: h,m = map(int, tst_str.strip().split(":"))
     except: return tst_str, tst_str
-    tst_min = h*60+m; utc_min = tst_min-480; local_min = utc_min+int(tz_offset*60); early_min = local_min-20
+    local_min = (h*60+m) - 480 + int(tz_offset*60)
+    early_min = local_min - 20
     def fmt(t):
-        prev = t < 0; nxt = t >= 1440; m2 = t % 1440; hh, mm = divmod(m2, 60)
+        prev=t<0; nxt=t>=1440; m2=t%1440; hh,mm=divmod(m2,60)
         return f"{'Prev. night ' if prev else 'Next day ' if nxt else ''}{tz_abbr} {hh:02d}:{mm:02d}"
     return fmt(local_min), fmt(early_min)
 
@@ -87,20 +118,19 @@ def calc_local_early(tst_str, tz_abbr, tz_offset):
 st.markdown("""
 <style>
 .bi{display:flex;flex-direction:column;line-height:1.35}
-.bi .zh{font-size:.92rem;color:#1a1a18}
-.bi .en{font-size:.75rem;color:#888;margin-top:1px}
-.cnt-ok{background:#eaf3de;color:#27500a;padding:2px 9px;border-radius:5px;font-weight:600;font-size:.82rem}
-.cnt-warn{background:#faeeda;color:#633806;padding:2px 9px;border-radius:5px;font-weight:600;font-size:.82rem}
-.cnt-bad{background:#fcebeb;color:#a32d2d;padding:2px 9px;border-radius:5px;font-weight:600;font-size:.82rem}
-.cnt-zero{background:#f1efe8;color:#aaa;padding:2px 9px;border-radius:5px;font-size:.82rem}
-.sec-am{background:#faeeda;color:#633806;padding:7px 14px;border-radius:8px 8px 0 0;font-weight:500;font-size:.88rem}
-.sec-pm{background:#e6f1fb;color:#0c447c;padding:7px 14px;border-radius:8px 8px 0 0;font-weight:500;font-size:.88rem}
-.phase-bar{background:#f7f6f3;border:1px solid #e8e7e2;border-radius:8px;padding:8px 14px;font-size:.82rem;color:#666;display:flex;align-items:center;gap:10px;margin-bottom:1.2rem}
-.phase-on{background:#e6f1fb;color:#0c447c;padding:4px 10px;border-radius:5px;font-weight:500}
-.meet-card{background:#e8f5e9;border:1.5px solid #81c784;border-radius:10px;padding:1rem 1.2rem;margin-bottom:.75rem}
-.stat-card{background:var(--background-color);border:1px solid rgba(0,0,0,.1);border-radius:10px;padding:.875rem 1rem;text-align:center}
-.stat-val{font-size:1.75rem;font-weight:700;color:#185fa5}
-.stat-lbl{font-size:.75rem;color:#888;margin-top:2px}
+.bi .zh{font-size:.92rem;color:var(--color-text-primary)}
+.bi .en{font-size:.75rem;color:var(--color-text-secondary);margin-top:1px}
+.sch-cell{border-radius:6px;padding:6px 8px;text-align:center;font-size:.78rem;font-weight:500}
+.sch-asia{background:#E1F5EE;color:#085041}
+.sch-eu{background:#E6F1FB;color:#0C447C}
+.sch-us{background:#FAEEDA;color:#633806}
+.sch-empty{background:var(--color-background-secondary);color:var(--color-text-secondary)}
+.sess-asia{background:#E1F5EE;border-left:3px solid #1D9E75;padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:6px}
+.sess-eu{background:#E6F1FB;border-left:3px solid #378ADD;padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:6px}
+.sess-us{background:#FAEEDA;border-left:3px solid #EF9F27;padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:6px}
+.stat{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.625rem .75rem;text-align:center}
+.sv{font-size:20px;font-weight:500}
+.sl{font-size:11px;color:var(--color-text-secondary);margin-top:2px}
 [data-testid="stSidebar"]{display:none}
 .stButton button{border-radius:8px!important}
 footer{display:none!important}
@@ -120,7 +150,7 @@ def init_firebase():
             if "private_key" in cred_dict:
                 cred_dict["private_key"] = cred_dict["private_key"].replace("\\n","\n")
             firebase_admin.initialize_app(credentials.Certificate(cred_dict),
-                                           {"databaseURL": st.secrets["firebase_url"]})
+                                           {"databaseURL":st.secrets["firebase_url"]})
         return db, True
     except: return None, False
 
@@ -181,479 +211,384 @@ def load_config():
     raw=db_get("config")
     if isinstance(raw,dict) and "sessions" in raw and "dates" in raw:
         cfg=_fix(raw)
-        if "settings" not in cfg: cfg["settings"]=copy.deepcopy(DEFAULT_CONFIG["settings"])
+        for key in ("teacher_slots","settings"):
+            if key not in cfg: cfg[key]=copy.deepcopy(DEFAULT_CONFIG[key])
         return cfg
     return copy.deepcopy(DEFAULT_CONFIG)
 
 def save_config(cfg):
     db_set("config",cfg); st.session_state.app_config=cfg
 
-def derive(cfg):
-    dates_en=[d["en"] for d in cfg["dates"]]
-    dates_zh=[d["zh"] for d in cfg["dates"]]
-    dates_iso=[d.get("iso","2026-01-01") for d in cfg["dates"]]
-    slots,local,early,reg=[],[],[],[]
-    for sess in cfg["sessions"]:
-        for s in sess["slots"]:
-            slots.append(s["tst"]); local.append(s["local"])
-            early.append(s["early"]); reg.append(sess["region"])
-    return dates_en,dates_zh,dates_iso,slots,local,early,reg,len(dates_en),len(slots)
-
 if "app_config" not in st.session_state:
     st.session_state.app_config=load_config()
 
 _C=st.session_state.app_config
-DATES_EN,DATES_ZH,DATES_ISO,ALL_SLOTS,ALL_LOCAL,ALL_EARLY,SLOT_REG,N_D,N_S=derive(_C)
 
-# ══════════════════════════════════════════════════════
-# HELPERS
-# ══════════════════════════════════════════════════════
-for k,v in {"screen":"landing","user_name":"","region":"eu","my_booking":None,"open_slots":[],
-            "counts":[[0]*N_S for _ in range(N_D)],"students":{},"admin_open":[],"avail_loaded":False,"pw_error":False}.items():
+def get_sessions(): return _C.get("sessions",[])
+def get_dates(): return _C.get("dates",[])
+def get_teacher_slots(): return _C.get("teacher_slots",{})
+def get_settings(): return _C.get("settings",DEFAULT_CONFIG["settings"])
+
+def get_all_tst_times():
+    times=[]
+    seen=set()
+    for sess in get_sessions():
+        for s in sess.get("slots",[]):
+            t=s["tst"]
+            if t not in seen: times.append(t); seen.add(t)
+    return sorted(times)
+
+def get_meet_link(di,sess_id):
+    iso=get_dates()[di]["iso"] if di<len(get_dates()) else ""
+    return get_settings().get("meet_links",{}).get(f"{iso}_{sess_id}","")
+
+def get_slot_booking_count(di,tst,sess_id=None):
+    students=st.session_state.get("students",{})
+    count=0
+    for s in students.values():
+        if isinstance(s,dict) and s.get("di")==di and s.get("tst")==tst:
+            if sess_id is None or s.get("sess_id")==sess_id:
+                count+=1
+    return count
+
+def session_class(sess_id):
+    return {"asia":"sch-asia","eu":"sch-eu","us":"sch-us"}.get(sess_id,"sch-empty")
+
+def session_style(sess_id):
+    return {"asia":"sess-asia","eu":"sess-eu","us":"sess-us"}.get(sess_id,"")
+
+def load_students(): st.session_state.students=db_get_all("students")
+def load_open_slots():
+    raw=db_get("open_slots") or []
+    st.session_state.open_slots=raw if isinstance(raw,list) else []
+
+# Session state
+for k,v in {"screen":"landing","user_name":"","pw_error":False,
+            "students":{},"open_slots":[],"adm_open":[]}.items():
     if k not in st.session_state: st.session_state[k]=v
 
 def go(s): st.session_state.screen=s; st.rerun()
-def badge(n):
-    cls="cnt-ok" if n>=3 else "cnt-warn" if n==2 else "cnt-bad" if n==1 else "cnt-zero"
-    return f'<span class="{cls}">{n}</span>'
 def bi(zh,en): return f'<div class="bi"><span class="zh">{zh}</span><span class="en">{en}</span></div>'
-
-def get_settings(): return _C.get("settings", DEFAULT_CONFIG["settings"])
-def get_meet_link(di, region):
-    iso=DATES_ISO[di] if di<len(DATES_ISO) else ""
-    return get_settings().get("meet_links",{}).get(f"{iso}_{region}","")
-
-def load_counts():
-    teachers=db_get_all("teachers")
-    counts=[[0]*N_S for _ in range(N_D)]
-    for avail in teachers.values():
-        if isinstance(avail,list):
-            for di,row in enumerate(avail):
-                for si,v in enumerate(row):
-                    if v and di<N_D and si<N_S: counts[di][si]+=1
-    st.session_state.counts=counts
-
-def load_open_slots():
-    slots=db_get("open_slots") or []
-    st.session_state.open_slots=slots if isinstance(slots,list) else []
-
-def load_students():
-    st.session_state.students=db_get_all("students")
-
-def get_slot_counts():
-    """Count students booked per di_si key."""
-    out={}
-    for s in st.session_state.students.values():
-        if isinstance(s,dict):
-            k=f"{s.get('di',0)}_{s.get('si',0)}"
-            out[k]=out.get(k,0)+1
-    return out
-
-def session_for_si(si):
-    idx=0
-    for sess in _C["sessions"]:
-        for _ in sess["slots"]:
-            if idx==si: return sess
-            idx+=1
-    return _C["sessions"][0]
 
 # ══════════════════════════════════════════════════════
 # SCREEN: LANDING
 # ══════════════════════════════════════════════════════
 def screen_landing():
-    st.markdown("### 🎓 CLC Oral Exam Registration")
-    st.caption("Chinese Language Center · NCKU")
+    st.markdown("### 🎓 CLC 口試排程系統")
+    st.caption("Chinese Language Center · NCKU · 5/27–5/29, 2025")
     if not FIREBASE_OK:
         st.warning("⚠️ Demo mode — Firebase not configured.")
     st.divider()
     c1,c2,c3=st.columns(3)
     with c1:
         st.markdown("**🧑‍🏫**"); st.markdown(bi("老師","Teacher"),unsafe_allow_html=True)
-        st.caption("填寫可用空堂時段\nFill in availability")
-        if st.button("進入 / Enter →",key="go_t",use_container_width=True): go("teacher_id")
+        st.caption("查看您的口試班表\nView your schedule")
+        if st.button("查看班表 →",key="go_t",use_container_width=True): go("teacher_id")
     with c2:
         st.markdown("**🎓**"); st.markdown(bi("學生","Student"),unsafe_allow_html=True)
-        st.caption("查看並報名口試時段\nView & register slots")
-        if st.button("進入 / Enter →",key="go_s",use_container_width=True): go("student_id")
+        st.caption("報名口試時段\nRegister for a slot")
+        if st.button("進入報名 →",key="go_s",use_container_width=True): go("student_id")
     with c3:
         st.markdown("**🛡️**"); st.markdown(bi("管理員","Admin"),unsafe_allow_html=True)
-        st.caption("確認時段並開放報名\nPublish slots")
-        if st.button("進入 / Enter →",key="go_a",use_container_width=True): go("admin_id")
-    st.divider()
-    st.markdown('<div style="font-size:.8rem;color:#888">🔒 每位使用者僅能讀寫自己的資料。</div>',unsafe_allow_html=True)
+        st.caption("排班與報名管理\nManage schedule")
+        if st.button("管理後台 →",key="go_a",use_container_width=True): go("admin_id")
 
 # ══════════════════════════════════════════════════════
-# SCREEN: TEACHER ID
+# SCREEN: TEACHER (read-only schedule view)
 # ══════════════════════════════════════════════════════
 def screen_teacher_id():
-    if st.button("← Back",key="back_tid"): go("landing")
-    st.markdown("### 🧑‍🏫 "+bi("老師空堂填寫","Teacher Availability"),unsafe_allow_html=True)
-    name=st.text_input(bi("姓名（作為識別）","Name — your unique ID"),value=st.session_state.user_name,placeholder="e.g. 陳老師",key="inp_tn")
-    if st.button("開始填寫 →",type="primary",use_container_width=True):
+    if st.button("← 返回",key="back_tid"): go("landing")
+    st.markdown("### 🧑‍🏫 老師班表查詢")
+    st.info("輸入您的姓名，系統自動顯示您被分配到的口試時段。")
+    name=st.text_input("您的姓名 Your name",placeholder="e.g. 芝彤",key="t_name_inp")
+    if st.button("查看我的班表 →",type="primary",use_container_width=True):
         name=name.strip()
         if not name: st.error("請輸入姓名"); return
-        st.session_state.user_name=name; st.session_state.avail_loaded=False; go("teacher_grid")
+        st.session_state.user_name=name; go("teacher_schedule")
 
-# ══════════════════════════════════════════════════════
-# SCREEN: TEACHER GRID
-# ══════════════════════════════════════════════════════
-def screen_teacher_grid():
+def screen_teacher_schedule():
     name=st.session_state.user_name
-    if not st.session_state.avail_loaded:
-        load_counts()
-        saved=db_get(f"teachers/{name}")
-        for di in range(N_D):
-            for si in range(N_S):
-                k=f"avail_{di}_{si}"
-                try: st.session_state[k]=bool(saved[di][si]) if isinstance(saved,list) else False
-                except: st.session_state[k]=False
-        st.session_state.avail_loaded=True
+    if st.button("← 返回",key="back_ts"): go("landing")
+    st.markdown(f"### 🧑‍🏫 {name} 的口試班表")
 
-    col_h,col_btn=st.columns([3,1])
-    with col_h:
-        st.markdown(f"### 🧑‍🏫 {name}")
-        st.caption("勾選您可用的時段 · Check your available slots")
-    with col_btn:
-        if st.button("← Back",key="back_tg"): st.session_state.avail_loaded=False; go("landing")
+    teacher_slots=get_teacher_slots()
+    dates=get_dates()
+    all_times=get_all_tst_times()
 
-    counts=st.session_state.counts
-    st.markdown('<div style="font-size:.8rem;color:#666;margin-bottom:.5rem">數字 = 目前確認老師數 · 綠≥3 · 橘=2 · 紅=1</div>',unsafe_allow_html=True)
+    # Find slots where this teacher is assigned
+    my_slots=[]
+    for k,v in teacher_slots.items():
+        if isinstance(v,str) and name in v:
+            parts=k.split("_",1)
+            if len(parts)==2:
+                iso,tst=parts
+                di=next((i for i,d in enumerate(dates) if d["iso"]==iso),None)
+                if di is not None:
+                    my_slots.append({"di":di,"iso":iso,"tst":tst,"teachers":v})
 
-    def render_section(sess_idx):
-        sess=_C["sessions"][sess_idx]; is_am=sess["region"]=="us"
-        cls="sec-am" if is_am else "sec-pm"
-        offset=sum(len(_C["sessions"][i]["slots"]) for i in range(sess_idx))
-        slots=sess["slots"]
-        st.markdown(f'<div class="{cls}">{sess["flag"]} {sess["name_zh"]} {sess["name_en"]}</div>',unsafe_allow_html=True)
+    if not my_slots:
+        st.warning(f"找不到「{name}」的班表。請確認姓名拼寫是否與管理員設定一致。")
+        return
 
-        # Quick-select row
-        qcols=st.columns(N_D+1)
-        qcols[0].markdown('<div style="font-size:.72rem;color:#888;padding-top:6px">快選</div>',unsafe_allow_html=True)
-        for di in range(N_D):
-            if qcols[di+1].button(f"全選\n{DATES_ZH[di][:4]}",key=f"qsel_{sess_idx}_{di}",use_container_width=True):
-                for i in range(len(slots)):
-                    st.session_state[f"avail_{di}_{offset+i}"]=True
-                st.rerun()
+    my_slots.sort(key=lambda x:(x["di"],x["tst"]))
 
-        hdr=st.columns([1.8]+[1]*len(slots))
-        hdr[0].markdown('<div class="bi"><span class="zh">日期</span><span class="en">Date</span></div>',unsafe_allow_html=True)
-        for i,s in enumerate(slots):
-            hdr[i+1].markdown(f'<div style="font-size:1rem;font-weight:700">{s["tst"]}</div><div style="font-size:.7rem;color:#aaa;margin-top:2px">{s["local"]}</div>',unsafe_allow_html=True)
-        st.markdown('<hr style="margin:4px 0 8px;border-color:#eee">',unsafe_allow_html=True)
-        for di in range(N_D):
-            cols=st.columns([1.8]+[1]*len(slots))
-            cols[0].markdown(f'<div class="bi"><span class="zh">{DATES_ZH[di]}</span><span class="en">{DATES_EN[di]}</span></div>',unsafe_allow_html=True)
-            for i in range(len(slots)):
-                si=offset+i; n=counts[di][si] if di<len(counts) and si<len(counts[di]) else 0
-                with cols[i+1]:
-                    st.checkbox("",key=f"avail_{di}_{si}",label_visibility="collapsed")
-                    st.markdown(badge(n),unsafe_allow_html=True)
+    st.markdown(f"共 **{len(my_slots)}** 個口試時段（台灣時間）：")
+    load_students()
 
-    with st.container(border=True):
-        for idx in range(len(_C["sessions"])):
-            render_section(idx)
-            if idx<len(_C["sessions"])-1: st.markdown('<div style="height:.5rem"></div>',unsafe_allow_html=True)
+    for slot in my_slots:
+        di,tst=slot["di"],slot["tst"]
+        d=dates[di]; iso=d["iso"]
+        booked=get_slot_booking_count(di,tst)
+        meet_url=""
+        for sess in get_sessions():
+            ml=get_meet_link(di,sess["id"])
+            if ml: meet_url=ml; break
 
-    if st.button("💾 儲存我的空堂 / Save",type="primary",use_container_width=True):
-        avail=[[bool(st.session_state.get(f"avail_{di}_{si}",False)) for si in range(N_S)] for di in range(N_D)]
-        db_set(f"teachers/{name}",avail); load_counts()
-        st.success("✅ 儲存成功！/ Saved!")
-        st.rerun()
+        with st.container(border=True):
+            c1,c2=st.columns([3,1])
+            with c1:
+                # Only TST shown — no local time conversion
+                st.markdown(f"**{d['zh']} {d['en']}**")
+                st.markdown(
+                    f'<div style="font-size:1.35rem;font-weight:700;color:var(--color-text-primary)">'
+                    f'🕐 {tst} TST</div>'
+                    f'<div style="font-size:.82rem;color:var(--color-text-secondary);margin-top:2px">'
+                    f'👥 {slot["teachers"]} &nbsp;·&nbsp; 📝 {booked} 人已報名</div>',
+                    unsafe_allow_html=True)
+            with c2:
+                if meet_url:
+                    st.markdown(f'<a href="{meet_url}" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:6px;background:#E8F5E9;color:#1B5E20;border:1px solid #81C784;border-radius:8px;padding:8px;text-decoration:none;font-size:.82rem;font-weight:500;text-align:center">🎥 Join Meet</a>',unsafe_allow_html=True)
+                else:
+                    st.caption("Meet 連結\n待設定")
 
-    # ── Confirmed sessions for this teacher ──────────────
+    # Show student list for this teacher's slots
     st.divider()
-    st.markdown("#### 📋 您已確認的場次 / Your confirmed sessions")
-    st.caption("以下為您勾選且師資已達3位的時段（已儲存資料為準）")
-    saved=db_get(f"teachers/{name}")
-    if not isinstance(saved,list):
-        st.info("尚未儲存任何資料。填寫後請先按「儲存」。")
+    st.markdown("**分配到您場次的學生 Students in your sessions**")
+    students=st.session_state.students
+    my_tst_set={(s["di"],s["tst"]) for s in my_slots}
+    my_students=[(k,v) for k,v in students.items()
+                 if isinstance(v,dict) and (v.get("di"),v.get("tst")) in my_tst_set]
+    if not my_students:
+        st.caption("尚無學生報名您的時段。")
     else:
-        confirmed=[]
-        for di in range(N_D):
-            for si in range(N_S):
-                try: my_ok=bool(saved[di][si])
-                except: my_ok=False
-                n=counts[di][si] if di<len(counts) and si<len(counts[di]) else 0
-                if my_ok and n>=3:
-                    sess=session_for_si(si)
-                    meet=get_meet_link(di,sess["region"])
-                    confirmed.append((di,si,sess,meet))
-        if not confirmed:
-            st.info("目前尚無達標的確認場次（需≥3位老師，且您已勾選並儲存）。")
-        else:
-            for di,si,sess,meet in confirmed:
-                with st.container(border=True):
-                    c1,c2=st.columns([3,1])
-                    with c1:
-                        st.markdown(f"**{sess['flag']} {DATES_ZH[di]} · {ALL_SLOTS[si]} TST**")
-                        st.caption(f"{sess['name_zh']} / {sess['name_en']} · {ALL_LOCAL[si]}")
-                    with c2:
-                        if meet:
-                            st.markdown(f'<a href="{meet}" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:4px;background:#e8f5e9;color:#1b5e20;border:1px solid #81c784;border-radius:8px;padding:7px 12px;text-decoration:none;font-size:.82rem;font-weight:500;width:100%">🎥 Join Meet</a>',unsafe_allow_html=True)
-                        else:
-                            st.caption("Meet 連結待管理員設定")
+        import pandas as pd
+        rows=[]
+        for _,s in sorted(my_students,key=lambda x:(x[1].get("di",0),x[1].get("tst",""))):
+            di=s.get("di",0); tst=s.get("tst","")
+            d=dates[di] if di<len(dates) else {"zh":"?","en":"?"}
+            rows.append({"姓名":s.get("name",""),"國籍":s.get("country",""),"場次":s.get("sess_name",""),
+                         "日期":d["zh"],"時段 TST":tst,"當地時間":s.get("local_str","")})
+        st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
 
 # ══════════════════════════════════════════════════════
 # SCREEN: ADMIN ID
 # ══════════════════════════════════════════════════════
 def screen_admin_id():
-    if st.button("← Back",key="back_aid"): go("landing")
-    st.markdown("### 🛡️ "+bi("管理員登入","Admin Login"),unsafe_allow_html=True)
-    pw=st.text_input(bi("管理密碼","Password"),type="password",placeholder="Enter password")
-    if st.session_state.pw_error: st.error("❌ 密碼錯誤 / Incorrect password")
-    if st.button("登入 / Login",type="primary",use_container_width=True):
+    if st.button("← 返回",key="back_aid"): go("landing")
+    st.markdown("### 🛡️ 管理員登入")
+    pw=st.text_input("密碼",type="password",placeholder="Enter password")
+    if st.session_state.pw_error: st.error("❌ 密碼錯誤")
+    if st.button("登入",type="primary",use_container_width=True):
         if pw==ADMIN_PW:
             st.session_state.pw_error=False
-            load_counts(); load_open_slots(); load_students()
-            st.session_state.admin_open=[f"{o['di']}_{o['si']}" for o in st.session_state.open_slots if isinstance(o,dict)]
+            load_students(); load_open_slots()
+            # Sync admin_open from stored open_slots
+            st.session_state.adm_open=[f"{o['di']}_{o['tst']}_{o.get('sess_id','')}"
+                                        for o in st.session_state.open_slots if isinstance(o,dict)]
             go("admin_dash")
         else: st.session_state.pw_error=True; st.rerun()
-    st.caption(f"預設密碼：`{ADMIN_PW}`")
 
 # ══════════════════════════════════════════════════════
 # SCREEN: ADMIN DASHBOARD
 # ══════════════════════════════════════════════════════
 def screen_admin_dash():
     col_h,col_r=st.columns([4,1])
-    with col_h: st.markdown("### 🛡️ "+bi("管理員儀表板","Admin Dashboard"),unsafe_allow_html=True)
+    with col_h: st.markdown("### 🛡️ 管理員儀表板")
     with col_r:
-        if st.button("↻",key="adm_ref",help="Refresh"): load_counts(); load_students(); st.rerun()
-    if st.button("← Back",key="back_ad"): go("landing")
+        if st.button("↻",key="adm_ref"): load_students(); load_open_slots(); st.rerun()
+    if st.button("← 返回",key="back_ad"): go("landing")
 
-    counts=st.session_state.counts
     settings=get_settings()
-    slot_counts=get_slot_counts()
-
-    st.markdown('<div class="phase-bar"><span class="phase-on">Phase 1 老師填寫空堂</span><span>›</span><span class="phase-on">Phase 2 開放學生報名</span></div>',unsafe_allow_html=True)
-
-    # Registration status banner
     if not settings.get("registration_open",True):
-        st.error("🔒 報名目前**關閉**中 / Registration is currently **CLOSED**")
+        st.error("🔒 報名目前**關閉**中")
     else:
-        deadline=settings.get("deadline","")
-        if deadline:
+        dl=settings.get("deadline","")
+        if dl:
             try:
-                dl=datetime.strptime(deadline,"%Y-%m-%d %H:%M")
-                now=datetime.now()
-                if now>dl: st.warning(f"⏰ 報名截止時間 {deadline} 已過期")
-                else:
-                    diff=dl-now; hrs=int(diff.total_seconds()//3600)
-                    st.info(f"🟢 報名開放中 · 截止：{deadline}（剩約 {hrs} 小時）")
+                diff=datetime.strptime(dl,"%Y-%m-%d %H:%M")-datetime.now()
+                hrs=max(0,int(diff.total_seconds()//3600))
+                st.info(f"🟢 報名開放中 · 截止：{dl}（剩約 {hrs} 小時）")
             except: st.success("🟢 報名開放中")
-        else: st.success("🟢 報名開放中 / Registration OPEN")
+        else: st.success("🟢 報名開放中")
 
-    tab_ov,tab_slots,tab_teachers,tab_students,tab_cfg=st.tabs([
-        "📊 總覽","🔓 開放時段","🧑‍🏫 老師空堂","🎓 學生報名","⚙️ 設定"
-    ])
+    dates=get_dates(); sessions=get_sessions()
+    teacher_slots=get_teacher_slots()
+    students=st.session_state.students
+
+    tab_sch,tab_open,tab_stu,tab_cfg=st.tabs(["📋 排班管理","🔓 開放時段","🎓 學生報名","⚙️ 設定"])
 
     # ══════════════════════════════════════
-    # TAB 1: 📊 總覽 Analytics
+    # TAB 1: 排班管理
     # ══════════════════════════════════════
-    with tab_ov:
-        students=st.session_state.students
-        total_stu=len(students)
-        # Count slots covered (≥3 teachers)
-        covered=sum(1 for di in range(N_D) for si in range(N_S) if (di<len(counts) and si<len(counts[di]) and counts[di][si]>=3))
-        total_slots=N_D*N_S
-        open_count=len(st.session_state.open_slots)
+    with tab_sch:
+        st.markdown("**老師分配表 Teacher assignment grid**")
+        st.caption("直接在格子裡填入老師名字，填完按「儲存排班」。空白格 = 無老師/該時段不開放。")
 
-        c1,c2,c3,c4=st.columns(4)
-        for col,val,lbl in [
-            (c1,total_stu,"學生報名數\nRegistered"),
-            (c2,open_count,"開放時段數\nOpen slots"),
-            (c3,covered,f"師資達標時段\n≥3 teachers"),
-            (c4,len(db_get_all("teachers")),f"老師已填寫\nTeachers filled"),
-        ]:
-            with col:
-                st.markdown(f'<div class="stat-card"><div class="stat-val">{val}</div><div class="stat-lbl">{lbl}</div></div>',unsafe_allow_html=True)
-
-        st.markdown('<div style="height:.75rem"></div>',unsafe_allow_html=True)
-
-        if students:
-            import pandas as pd
-            # By session
-            session_counts={}
-            for s in students.values():
-                if isinstance(s,dict):
-                    sess=session_for_si(s.get("si",0))
-                    k=f"{sess['flag']} {sess['name_zh']}"
-                    session_counts[k]=session_counts.get(k,0)+1
-            if session_counts:
-                st.markdown("**報名人數 by 場次**")
-                df_sess=pd.DataFrame(list(session_counts.items()),columns=["場次","人數"])
-                st.bar_chart(df_sess.set_index("場次"))
-
-            # By date
-            date_counts={}
-            for s in students.values():
-                if isinstance(s,dict):
-                    di=s.get("di",0)
-                    k=DATES_ZH[di] if di<N_D else "?"
-                    date_counts[k]=date_counts.get(k,0)+1
-            if date_counts:
-                st.markdown("**報名人數 by 日期**")
-                ordered={d:date_counts.get(d,0) for d in DATES_ZH}
-                df_date=pd.DataFrame(list(ordered.items()),columns=["日期","人數"])
-                st.bar_chart(df_date.set_index("日期"))
+        all_times=get_all_tst_times()
+        draft_ts={}
+        if "cfg_draft" in st.session_state:
+            draft_ts=st.session_state.cfg_draft.get("teacher_slots",{})
         else:
-            st.info("尚無學生報名資料可分析。")
+            draft_ts=copy.deepcopy(teacher_slots)
+
+        # Table header
+        hdr=st.columns([1]+[1.5]*len(dates))
+        hdr[0].markdown('<div style="font-size:.78rem;color:var(--color-text-secondary)">時段 TST</div>',unsafe_allow_html=True)
+        for i,d in enumerate(dates):
+            hdr[i+1].markdown(f'<div style="font-size:.78rem;font-weight:500;text-align:center">{d["zh"]}<br><span style="font-size:.72rem;color:var(--color-text-secondary)">{d["en"]}</span></div>',unsafe_allow_html=True)
+
+        # Determine if morning or afternoon for styling
+        def is_morning(t):
+            h=int(t.split(":")[0])
+            return h<12
+
+        changed=False
+        for t in all_times:
+            cols=st.columns([1]+[1.5]*len(dates))
+            bg="#E1F5EE" if is_morning(t) else "#E6F1FB"
+            tc="#085041" if is_morning(t) else "#0C447C"
+            cols[0].markdown(f'<div style="font-size:.82rem;font-weight:500;color:{tc};background:{bg};padding:4px 6px;border-radius:4px">{t}</div>',unsafe_allow_html=True)
+            for di,d in enumerate(dates):
+                k=f"{d['iso']}_{t}"
+                cur=draft_ts.get(k,"")
+                new_val=cols[di+1].text_input(f"t_{di}_{t}",value=cur,label_visibility="collapsed",
+                                               placeholder="老師1 / 老師2")
+                if new_val!=cur: draft_ts[k]=new_val; changed=True
+
+        if st.button("💾 儲存排班 Save schedule",type="primary",use_container_width=True,key="save_ts"):
+            if "cfg_draft" not in st.session_state:
+                st.session_state.cfg_draft=copy.deepcopy(st.session_state.app_config)
+            st.session_state.cfg_draft["teacher_slots"]={k:v for k,v in draft_ts.items() if v.strip()}
+            save_config(st.session_state.cfg_draft)
+            st.session_state.pop("cfg_draft",None); st.session_state.pop("app_config",None)
+            st.success("✅ 排班已儲存！"); st.rerun()
+
+        # Also show student bookings per slot
+        if students:
+            st.divider()
+            st.markdown("**各時段報名人數**")
+            for t in all_times:
+                for di,d in enumerate(dates):
+                    total=get_slot_booking_count(di,t)
+                    if total>0:
+                        k=f"{d['iso']}_{t}"
+                        teachers=teacher_slots.get(k,"未分配")
+                        st.markdown(f"**{d['zh']} {t}**　👥 {teachers}　📝 {total} 人已報名")
 
     # ══════════════════════════════════════
-    # TAB 2: 開放時段管理
+    # TAB 2: 開放時段
     # ══════════════════════════════════════
-    with tab_slots:
-        max_per=settings.get("max_per_slot",1)
-        st.markdown(bi("各時段老師確認人數 · 勾選開放給學生","Teacher count per slot · Check to publish"),unsafe_allow_html=True)
+    with tab_open:
+        st.markdown("**各場次開放設定**")
+        st.caption("勾選要開放給學生報名的時段（只有已填老師的時段才能開放）。")
+        max_per=int(settings.get("max_per_slot",3))
         st.caption(f"每時段名額上限：{max_per} 人（可在「⚙️ 設定」修改）")
 
-        def slot_section_admin(sess_idx):
-            sess=_C["sessions"][sess_idx]; is_am=sess["region"]=="us"
-            cls="sec-am" if is_am else "sec-pm"
-            offset=sum(len(_C["sessions"][i]["slots"]) for i in range(sess_idx))
-            slots=sess["slots"]
-            st.markdown(f'<div class="{cls}">{sess["flag"]} {sess["name_zh"]} · {sess["name_en"]}</div>',unsafe_allow_html=True)
-            hdr=st.columns([1.6]+[1]*len(slots))
-            hdr[0].markdown(bi("日期","Date"),unsafe_allow_html=True)
-            for i,s in enumerate(slots): hdr[i+1].markdown(f"**{s['tst']}**")
-            for di in range(N_D):
-                cols=st.columns([1.6]+[1]*len(slots))
-                cols[0].markdown(f'<div class="bi"><span class="zh">{DATES_ZH[di]}</span><span class="en">{DATES_EN[di]}</span></div>',unsafe_allow_html=True)
-                for i in range(len(slots)):
-                    si=offset+i; n=counts[di][si] if di<len(counts) and si<len(counts[di]) else 0
-                    key=f"{di}_{si}"; booked=slot_counts.get(key,0)
-                    with cols[i+1]:
-                        st.markdown(badge(n),unsafe_allow_html=True)
-                        if booked>0: st.markdown(f'<span style="font-size:.72rem;color:#185fa5">{booked}人報</span>',unsafe_allow_html=True)
-                        if n>=3:
-                            checked=key in st.session_state.admin_open
-                            if st.checkbox("開放",value=checked,key=f"adm_{key}"):
-                                if key not in st.session_state.admin_open: st.session_state.admin_open.append(key)
-                            else:
-                                if key in st.session_state.admin_open: st.session_state.admin_open.remove(key)
+        adm_open=st.session_state.adm_open
 
-        with st.container(border=True):
-            for idx in range(len(_C["sessions"])):
-                slot_section_admin(idx)
-                if idx<len(_C["sessions"])-1: st.markdown('<div style="height:.5rem"></div>',unsafe_allow_html=True)
+        for sess in sessions:
+            sid=sess["id"]; flag=sess["flag"]; nz=sess["name_zh"]; ne=sess["name_en"]
+            scls=session_style(sid)
+            st.markdown(f'<div class="{scls}"><strong>{flag} {nz} / {ne}</strong>　<span style="font-size:.78rem">{sess.get("tz_preview","")}</span></div>',unsafe_allow_html=True)
 
-        n_open=len(st.session_state.admin_open)
-        if st.button(f"🔓 確認開放 {n_open} 個時段 / Publish",type="primary",use_container_width=True):
-            slots_to_save=[{"di":int(k.split("_")[0]),"si":int(k.split("_")[1])} for k in st.session_state.admin_open]
-            db_set("open_slots",slots_to_save); st.session_state.open_slots=slots_to_save
-            st.success(f"✅ 已開放 {n_open} 個時段！")
+            for slot in sess.get("slots",[]):
+                tst=slot["tst"]
+                for di,d in enumerate(dates):
+                    k=f"{d['iso']}_{tst}"
+                    teachers=teacher_slots.get(k,"")
+                    open_key=f"{di}_{tst}_{sid}"
+                    booked=get_slot_booking_count(di,tst,sid)
+                    rem=max(0,max_per-booked)
 
-    # ══════════════════════════════════════
-    # TAB 3: 老師空堂
-    # ══════════════════════════════════════
-    with tab_teachers:
-        st.markdown(bi("所有老師填寫的空堂 · 可新增或刪除","All teacher availability"),unsafe_allow_html=True)
-        teachers_raw=db_get_all("teachers")
-        if not teachers_raw:
-            st.info("尚無老師填寫空堂。")
-        else:
-            import pandas as pd
-            for t_name,avail in teachers_raw.items():
-                if not isinstance(avail,list): continue
-                total=sum(1 for row in avail for v in row if v)
-                with st.expander(f"🧑‍🏫 {t_name}  ·  {total} 個時段可用"):
-                    rows=[]
-                    for di in range(min(N_D,len(avail))):
-                        for si in range(min(N_S,len(avail[di]))):
-                            if avail[di][si]:
-                                sess=session_for_si(si)
-                                rows.append({"日期":f"{DATES_ZH[di]} {DATES_EN[di]}","TST":ALL_SLOTS[si],"場次":f"{sess['flag']} {sess['name_zh']}","當地":ALL_LOCAL[si]})
-                    if rows: st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
-                    else: st.caption("尚未勾選任何時段。")
-                    _,cd=st.columns([3,1])
-                    with cd:
-                        ck=f"cdel_{t_name}"
-                        if st.session_state.get(ck):
-                            st.error(f"確定刪除 {t_name}？")
-                            c1,c2=st.columns(2)
-                            with c1:
-                                if st.button("✅",key=f"dodel_{t_name}",use_container_width=True):
-                                    db_delete(f"teachers/{t_name}"); st.session_state[ck]=False; load_counts(); st.rerun()
-                            with c2:
-                                if st.button("❌",key=f"cx_{t_name}",use_container_width=True): st.session_state[ck]=False; st.rerun()
+                    col1,col2,col3,col4=st.columns([1.5,2,1.5,1])
+                    with col1: st.write(f"{d['zh']} {tst}")
+                    with col2:
+                        if teachers:
+                            st.markdown(f'<span class="sch-cell {session_class(sid)}">{teachers}</span>',unsafe_allow_html=True)
                         else:
-                            if st.button("🗑️ 刪除",key=f"del_{t_name}",use_container_width=True): st.session_state[ck]=True; st.rerun()
-        st.divider()
-        with st.expander("➕ 手動新增老師空堂"):
-            new_n=st.text_input("老師姓名",key="new_t",placeholder="例：林老師")
-            new_avail=[[False]*N_S for _ in range(N_D)]
-            for si_s,sess in enumerate(_C["sessions"]):
-                offset=sum(len(_C["sessions"][i]["slots"]) for i in range(si_s))
-                st.markdown(f"*{sess['flag']} {sess['name_zh']}*")
-                hdr2=st.columns([1.6]+[1]*len(sess["slots"]))
-                hdr2[0].markdown("**日期**")
-                for i,s in enumerate(sess["slots"]): hdr2[i+1].markdown(f"**{s['tst']}**")
-                for di in range(N_D):
-                    c2=st.columns([1.6]+[1]*len(sess["slots"]))
-                    c2[0].write(DATES_ZH[di])
-                    for i in range(len(sess["slots"])):
-                        si=offset+i; new_avail[di][si]=c2[i+1].checkbox("",key=f"nt_{di}_{si}",label_visibility="collapsed")
-            if st.button("💾 儲存",type="primary",use_container_width=True,key="save_new_t"):
-                n=new_n.strip()
-                if not n: st.error("請輸入姓名")
-                else: db_set(f"teachers/{n}",new_avail); load_counts(); st.success(f"✅ 已儲存 {n}！"); st.rerun()
+                            st.markdown('<span class="sch-cell sch-empty">— 無老師 —</span>',unsafe_allow_html=True)
+                    with col3:
+                        if booked>0:
+                            st.markdown(f'<span style="font-size:.78rem;color:#185fa5">{booked} 人已報名，剩 {rem}</span>',unsafe_allow_html=True)
+                        else:
+                            st.caption("尚無報名")
+                    with col4:
+                        if not teachers:
+                            st.button("需填老師",key=f"nf_{open_key}",disabled=True,use_container_width=True)
+                        else:
+                            checked=open_key in adm_open
+                            if st.checkbox("開放",value=checked,key=f"op_{open_key}"):
+                                if open_key not in adm_open: adm_open.append(open_key)
+                            else:
+                                if open_key in adm_open: adm_open.remove(open_key)
+
+        st.markdown('<div style="height:.5rem"></div>',unsafe_allow_html=True)
+        n=len(adm_open)
+        if st.button(f"🔓 確認開放 {n} 個時段",type="primary",use_container_width=True):
+            slots_to_save=[]
+            for key in adm_open:
+                parts=key.split("_")
+                if len(parts)>=3:
+                    di=int(parts[0]); tst=parts[1]; sid="_".join(parts[2:])
+                    sess_data=next((s for s in sessions if s["id"]==sid),None)
+                    slot_data=next((s for s in (sess_data.get("slots",[]) if sess_data else []) if s["tst"]==tst),None)
+                    slots_to_save.append({
+                        "di":di,"tst":tst,"sess_id":sid,
+                        "local":slot_data["local"] if slot_data else tst,
+                        "early":slot_data["early"] if slot_data else tst,
+                    })
+            db_set("open_slots",slots_to_save)
+            st.session_state.open_slots=slots_to_save
+            st.success(f"✅ 已開放 {n} 個時段！")
 
     # ══════════════════════════════════════
-    # TAB 4: 學生報名
+    # TAB 3: 學生報名
     # ══════════════════════════════════════
-    with tab_students:
-        students=st.session_state.students
-        st.markdown(bi(f"學生報名狀況（{len(students)} 人）",f"Student registrations ({len(students)})"),unsafe_allow_html=True)
+    with tab_stu:
         import pandas as pd
+        st.markdown(f"**學生報名狀況（{len(students)} 人）**")
+
+        # Summary by session
+        sess_cnt={}
+        for s in students.values():
+            if isinstance(s,dict):
+                k=s.get("sess_name","未分組")
+                sess_cnt[k]=sess_cnt.get(k,0)+1
+        if sess_cnt:
+            mcols=st.columns(len(sess_cnt))
+            for i,(k,v) in enumerate(sess_cnt.items()):
+                with mcols[i]:
+                    st.markdown(f'<div class="stat"><div class="sv">{v}</div><div class="sl">{k}</div></div>',unsafe_allow_html=True)
+            st.markdown('<div style="height:.5rem"></div>',unsafe_allow_html=True)
+
         if students:
             rows=[]
-            for s_key,s in students.items():
+            for sk,s in students.items():
                 if not isinstance(s,dict): continue
-                di,si=s.get("di",0),s.get("si",0)
-                sess=session_for_si(si)
-                rows.append({"_key":s_key,"姓名":s.get("name",""),"時區":s.get("tz_label",""),
-                              "場次":f"{sess['flag']} {sess['name_zh']}","日期":DATES_ZH[di] if di<N_D else "?",
-                              "TST":ALL_SLOTS[si] if si<N_S else "?","當地":s.get("local_str",ALL_LOCAL[si] if si<N_S else ""),
-                              "提前上線":s.get("early_str",ALL_EARLY[si] if si<N_S else "")})
+                di=s.get("di",0); tst=s.get("tst","")
+                d=dates[di] if di<len(dates) else {"zh":"?","en":"?"}
+                ts_key=f"{d.get('iso','')}_{tst}"
+                rows.append({"_key":sk,"姓名":s.get("name",""),"國籍":s.get("country",""),
+                              "場次":s.get("sess_name",""),"日期":d["zh"],"TST":tst,
+                              "當地時間":s.get("local_str",""),"提前上線":s.get("early_str",""),
+                              "老師":teacher_slots.get(ts_key,"未分配")})
             df=pd.DataFrame(rows)
             st.dataframe(df.drop(columns=["_key"]),use_container_width=True,hide_index=True)
-
-            # CSV export
             csv=df.drop(columns=["_key"]).to_csv(index=False,encoding="utf-8-sig")
-            st.download_button("📥 匯出 CSV / Export CSV",data=csv.encode("utf-8-sig"),
-                               file_name="clc_registrations.csv",mime="text/csv",use_container_width=True)
-
+            st.download_button("📥 匯出 CSV",data=csv.encode("utf-8-sig"),file_name="clc_registrations.csv",mime="text/csv",use_container_width=True)
             st.divider()
-            # Bulk email
-            if st.secrets.get("email_sender",""):
-                st.markdown("**📧 批次寄信 Bulk Email (含 Google Meet 連結)**")
-                # Group by di+region
-                grp_opts={}
-                for s in students.values():
-                    if not isinstance(s,dict): continue
-                    di,si=s.get("di",0),s.get("si",0)
-                    sess=session_for_si(si)
-                    k=f"{DATES_ZH[di] if di<N_D else '?'} {sess['flag']} {sess['name_zh']}"
-                    grp_opts[k]=(di,sess["region"])
-                sel_grp=st.selectbox("選擇場次 Select session",["— 全部 ALL —"]+list(grp_opts.keys()))
-                if st.button("📧 寄送 Meet 連結給選取場次學生",use_container_width=True,key="bulk_email"):
-                    count=0
-                    for s in students.values():
-                        if not isinstance(s,dict): continue
-                        di,si=s.get("di",0),s.get("si",0)
-                        sess=session_for_si(si); meet=get_meet_link(di,sess["region"])
-                        email_addr=s.get("email","")
-                        grp_k=f"{DATES_ZH[di] if di<N_D else '?'} {sess['flag']} {sess['name_zh']}"
-                        if (sel_grp=="— 全部 ALL —" or sel_grp==grp_k) and email_addr:
-                            # would send here
-                            count+=1
-                    st.info(f"（功能需配合 Email 欄位）目前找到 {count} 位有 Email 的學生可寄送。")
-            else:
-                st.caption("批次寄信需設定 email_sender Secret。")
-
-            st.divider()
-            st.markdown("**刪除學生報名紀錄**")
             names=[r["_key"] for r in rows]
-            del_n=st.selectbox("選擇學生",["— 請選擇 —"]+names)
+            del_n=st.selectbox("刪除學生報名",["— 請選擇 —"]+names)
             if del_n and del_n!="— 請選擇 —":
                 cks="cdelstu"
                 if st.session_state.get(cks)==del_n:
@@ -671,104 +606,113 @@ def screen_admin_dash():
         if st.button("↻ Refresh",key="ref_stu"): load_students(); st.rerun()
 
     # ══════════════════════════════════════
-    # TAB 5: ⚙️ 設定
+    # TAB 4: 設定
     # ══════════════════════════════════════
     with tab_cfg:
-        st.markdown(bi("系統設定","System config"),unsafe_allow_html=True)
         col_i,col_rst=st.columns([4,1])
         with col_rst:
-            if st.button("↺ 重置草稿",key="rst_draft"): st.session_state.pop("cfg_draft",None); st.rerun()
+            if st.button("↺ 重置草稿",key="rst_d"): st.session_state.pop("cfg_draft",None); st.rerun()
         if "cfg_draft" not in st.session_state:
             st.session_state.cfg_draft=copy.deepcopy(st.session_state.app_config)
         draft=st.session_state.cfg_draft
         if "settings" not in draft: draft["settings"]=copy.deepcopy(DEFAULT_CONFIG["settings"])
         s=draft["settings"]
 
-        # ── Registration settings ──────────────────────
-        st.markdown("#### 🔓 報名設定 Registration Settings")
+        # Registration settings
+        st.markdown("#### 🔓 報名設定")
         with st.container(border=True):
-            s["registration_open"]=st.toggle("報名開放 Registration Open",value=s.get("registration_open",True))
-            deadline_val=s.get("deadline","")
-            new_dl=st.text_input("截止時間 Deadline (YYYY-MM-DD HH:MM，留空=無限制)",value=deadline_val,placeholder="2026-05-25 23:59")
-            s["deadline"]=new_dl
-            s["max_per_slot"]=st.number_input("每時段名額上限 Max students per slot (0=無限制)",min_value=0,value=int(s.get("max_per_slot",1)),step=1)
+            s["registration_open"]=st.toggle("報名開放",value=s.get("registration_open",True))
+            s["deadline"]=st.text_input("截止時間 (YYYY-MM-DD HH:MM，留空=無限)",value=s.get("deadline",""),placeholder="2025-05-26 23:59")
+            s["max_per_slot"]=st.number_input("每時段名額上限 (0=無限)",min_value=0,value=int(s.get("max_per_slot",3)),step=1)
 
-        # ── Google Meet links ──────────────────────────
+        # Meet links
         st.markdown("#### 🎥 Google Meet 連結")
-        st.caption("每日期 × 每場次設定一個 Meet 連結，學生和老師報名後可看到。")
         if "meet_links" not in s: s["meet_links"]={}
-        for sess in _C["sessions"]:
-            st.markdown(f"**{sess['flag']} {sess['name_zh']} {sess['name_en']}**")
-            for d in _C["dates"]:
-                key=f"{d['iso']}_{sess['region']}"
-                cur=s["meet_links"].get(key,"")
-                new_url=st.text_input(
-                    f"{d['zh']} {d['en']}",value=cur,
-                    placeholder="https://meet.google.com/xxx-xxxx-xxx",
-                    key=f"meet_{key}")
-                s["meet_links"][key]=new_url.strip()
+        for sess in draft.get("sessions",[]):
+            st.markdown(f"**{sess['flag']} {sess['name_zh']}**")
+            for d in draft.get("dates",[]):
+                k=f"{d['iso']}_{sess['id']}"
+                cur=s["meet_links"].get(k,"")
+                new_url=st.text_input(f"{d['zh']}",value=cur,placeholder="https://meet.google.com/xxx",key=f"meet_{k}")
+                s["meet_links"][k]=new_url.strip()
 
-        # ── Date config ────────────────────────────────
-        st.markdown("#### 📅 考試日期 Exam Dates")
-        remove_di=None
-        hdr_cols=st.columns([2.2,2.2,2.2,0.4])
-        for h,t in zip(hdr_cols,["EN label","ZH label","ISO date",""]): h.markdown(f"<div style='font-size:.78rem;color:#888'>{t}</div>",unsafe_allow_html=True)
-        for i,d in enumerate(draft["dates"]):
-            c1,c2,c3,c4=st.columns([2.2,2.2,2.2,0.4])
+        # Dates
+        st.markdown("#### 📅 考試日期")
+        rm_d=None
+        hdr2=st.columns([2,2,2.5,0.4])
+        for h,t in zip(hdr2,["EN","ZH","ISO (YYYY-MM-DD)",""]): h.markdown(f"<div style='font-size:.75rem;color:var(--color-text-secondary)'>{t}</div>",unsafe_allow_html=True)
+        for i,d in enumerate(draft.get("dates",[])):
+            c1,c2,c3,c4=st.columns([2,2,2.5,0.4])
             with c1: d["en"]=st.text_input("en",value=d.get("en",""),key=f"de_{i}",label_visibility="collapsed")
             with c2: d["zh"]=st.text_input("zh",value=d.get("zh",""),key=f"dz_{i}",label_visibility="collapsed")
             with c3: d["iso"]=st.text_input("iso",value=d.get("iso",""),key=f"di_{i}",label_visibility="collapsed")
             with c4:
-                if len(draft["dates"])>1 and st.button("✕",key=f"rmd_{i}"): remove_di=i
-        if remove_di is not None: draft["dates"].pop(remove_di); st.rerun()
-        if st.button("＋ 新增日期",key="add_date"): draft["dates"].append({"en":"New Date","zh":"日期","iso":"2026-01-01"}); st.rerun()
+                if len(draft.get("dates",[]))>1 and st.button("✕",key=f"rmd_{i}"): rm_d=i
+        if rm_d is not None: draft["dates"].pop(rm_d); st.rerun()
+        if st.button("＋ 新增日期",key="add_d"): draft.setdefault("dates",[]).append({"en":"New","zh":"新日期","iso":"2025-01-01"}); st.rerun()
 
-        # ── Sessions config ────────────────────────────
-        st.markdown("#### 🕐 場次與時區 Sessions")
+        # Sessions (country groups)
+        st.markdown("#### 🗂️ 場次與國家群組")
+        st.caption("每個場次一個群組，逗號分隔國家名稱。學生選擇國籍後自動分配到對應場次。")
         tz_keys=list(TIMEZONE_OPTIONS.keys())
-        for si_s,sess in enumerate(draft["sessions"]):
-            with st.expander(f"{sess.get('flag','🌐')} {sess.get('name_zh','')} / {sess.get('name_en','')}  ·  {len(sess['slots'])} 個時段",expanded=False):
-                c1,c2,c3,c4=st.columns([0.8,2,2,2])
+        for si_s,sess in enumerate(draft.get("sessions",[])):
+            with st.expander(f"{sess.get('flag','🌐')} {sess.get('name_zh','')}  ·  {len(sess.get('slots',[]))} 個時段",expanded=False):
+                c1,c2,c3,c4=st.columns([0.6,1.8,2,1.5])
                 with c1: sess["flag"]=st.text_input("旗幟",value=sess.get("flag","🌐"),key=f"sf_{si_s}")
                 with c2: sess["name_zh"]=st.text_input("中文名稱",value=sess.get("name_zh",""),key=f"snz_{si_s}")
                 with c3: sess["name_en"]=st.text_input("English name",value=sess.get("name_en",""),key=f"sne_{si_s}")
-                with c4: sess["region"]=st.text_input("區域代碼",value=sess.get("region","eu"),key=f"sr_{si_s}",placeholder="eu/us/jp…",help="自由輸入：eu, us, jp, au, sg …")
-                st.markdown("**🌐 時區自動計算**")
+                with c4: sess["id"]=st.text_input("ID代碼",value=sess.get("id",""),key=f"sid_{si_s}",help="英文小寫，如 asia/eu/us/jp")
+
+                sess["countries"]=st.text_area(
+                    "包含國家 (逗號分隔)",value=sess.get("countries",""),
+                    key=f"sc_{si_s}",height=68,
+                    help="例：日本,越南,澳洲,印度  每個國名需與學生端選項完全一致")
+
+                st.markdown("**時段設定 + 時區自動計算**")
                 saved_tz=sess.get("_tz_name",tz_keys[0]); saved_idx=tz_keys.index(saved_tz) if saved_tz in tz_keys else 0
                 tz_col,btn_col=st.columns([3,1])
-                with tz_col: sel_tz=st.selectbox("選擇時區",options=tz_keys,index=saved_idx,key=f"sess_tz_{si_s}"); sess["_tz_name"]=sel_tz
+                with tz_col: sel_tz=st.selectbox("選擇時區",options=tz_keys,index=saved_idx,key=f"stz_{si_s}"); sess["_tz_name"]=sel_tz
                 with btn_col:
                     st.markdown('<div style="height:1.75rem"></div>',unsafe_allow_html=True)
-                    do_calc=st.button("🔄 自動填入",key=f"auto_tz_{si_s}",use_container_width=True)
-                if do_calc:
-                    tz_info=TIMEZONE_OPTIONS[sel_tz]
-                    for j,slot in enumerate(sess["slots"]):
-                        tst_val=st.session_state.get(f"st_{si_s}_{j}",slot["tst"])
-                        if tst_val.strip():
-                            l,e=calc_local_early(tst_val,tz_info["abbr"],tz_info["offset"])
-                            st.session_state[f"sl_{si_s}_{j}"]=l; st.session_state[f"se_{si_s}_{j}"]=e
-                            slot["local"]=l; slot["early"]=e
-                    st.rerun()
-                tz_cur=TIMEZONE_OPTIONS.get(sel_tz,list(TIMEZONE_OPTIONS.values())[0])
-                prev_parts=[]
-                for j,slot in enumerate(sess["slots"]):
-                    tst=st.session_state.get(f"st_{si_s}_{j}",slot.get("tst",""))
-                    if tst.strip():
-                        loc,_=calc_local_early(tst,tz_cur["abbr"],tz_cur["offset"])
-                        prev_parts.append(f"**{tst}**→{loc}")
-                if prev_parts: st.markdown(f'<div style="background:#eaf3de;border-radius:6px;padding:6px 12px;font-size:.78rem;color:#27500a">預覽: {" · ".join(prev_parts)}</div>',unsafe_allow_html=True)
-                hdr2=st.columns([1.5,2.5,2.5,0.4])
-                for h2,t2 in zip(hdr2,["TST","當地時間","提前上線",""]): h2.markdown(f"<div style='font-size:.75rem;color:#888'>{t2}</div>",unsafe_allow_html=True)
-                rm=None
-                for j,slot in enumerate(sess["slots"]):
+                    if st.button("🔄 自動填入",key=f"atz_{si_s}",use_container_width=True):
+                        tz_info=TIMEZONE_OPTIONS[sel_tz]
+                        for j,slot in enumerate(sess.get("slots",[])):
+                            tst_v=st.session_state.get(f"st_{si_s}_{j}",slot.get("tst",""))
+                            if tst_v.strip():
+                                l,e=calc_local_early(tst_v,tz_info["abbr"],tz_info["offset"])
+                                st.session_state[f"sl_{si_s}_{j}"]=l; st.session_state[f"se_{si_s}_{j}"]=e
+                                slot["local"]=l; slot["early"]=e
+                        st.rerun()
+
+                hdr3=st.columns([1.5,2.5,2.5,0.4])
+                for h3,t3 in zip(hdr3,["台灣時間 TST","當地時間","提前上線",""]): h3.markdown(f"<div style='font-size:.75rem;color:var(--color-text-secondary)'>{t3}</div>",unsafe_allow_html=True)
+                rm_s=None
+                for j,slot in enumerate(sess.get("slots",[])):
                     sc1,sc2,sc3,sc4=st.columns([1.5,2.5,2.5,0.4])
                     with sc1: slot["tst"]=st.text_input("t",value=slot.get("tst",""),key=f"st_{si_s}_{j}",label_visibility="collapsed",placeholder="HH:MM")
                     with sc2: slot["local"]=st.text_input("l",value=slot.get("local",""),key=f"sl_{si_s}_{j}",label_visibility="collapsed")
                     with sc3: slot["early"]=st.text_input("e",value=slot.get("early",""),key=f"se_{si_s}_{j}",label_visibility="collapsed")
                     with sc4:
-                        if len(sess["slots"])>1 and st.button("✕",key=f"rms_{si_s}_{j}"): rm=j
-                if rm is not None: sess["slots"].pop(rm); st.rerun()
-                if st.button("＋ 新增時段",key=f"adds_{si_s}"): sess["slots"].append({"tst":"","local":"","early":""}); st.rerun()
+                        if len(sess.get("slots",[]))>1 and st.button("✕",key=f"rms_{si_s}_{j}"): rm_s=j
+                if rm_s is not None: sess["slots"].pop(rm_s); st.rerun()
+                if st.button("＋ 新增時段",key=f"adds_{si_s}"): sess.setdefault("slots",[]).append({"tst":"","local":"","early":""}); st.rerun()
+                c_del,_=st.columns([1,3])
+                with c_del:
+                    ck_sess=f"del_sess_{si_s}"
+                    if st.session_state.get(ck_sess):
+                        st.error("確定刪除此場次？")
+                        ca,cb=st.columns(2)
+                        with ca:
+                            if st.button("✅",key=f"dodel_sess_{si_s}",use_container_width=True):
+                                draft["sessions"].pop(si_s); st.session_state[ck_sess]=False; st.rerun()
+                        with cb:
+                            if st.button("❌",key=f"cx_sess_{si_s}",use_container_width=True): st.session_state[ck_sess]=False; st.rerun()
+                    else:
+                        if st.button("🗑️ 刪除此場次",key=f"del_sess_btn_{si_s}"): st.session_state[ck_sess]=True; st.rerun()
+
+        if st.button("＋ 新增場次 Add session",key="add_sess"):
+            draft.setdefault("sessions",[]).append({"id":"new","flag":"🌐","name_zh":"新場次","name_en":"New Session","countries":"","tz_preview":"","slots":[{"tst":"","local":"","early":""}]})
+            st.rerun()
 
         st.divider()
         c_s,c_d=st.columns(2)
@@ -779,74 +723,32 @@ def screen_admin_dash():
         with c_d:
             ck_def="creset"
             if st.session_state.get(ck_def):
-                st.warning("確定還原預設值？")
                 cr1,cr2=st.columns(2)
                 with cr1:
-                    if st.button("✅ 確定",use_container_width=True,key="do_reset"):
+                    if st.button("✅ 確定還原",use_container_width=True,key="do_r"):
                         save_config(copy.deepcopy(DEFAULT_CONFIG)); st.session_state.pop("cfg_draft",None); st.session_state.pop("app_config",None); st.session_state[ck_def]=False; st.rerun()
                 with cr2:
-                    if st.button("❌ 取消",use_container_width=True,key="cx_reset"): st.session_state[ck_def]=False; st.rerun()
+                    if st.button("❌ 取消",use_container_width=True,key="cx_r"): st.session_state[ck_def]=False; st.rerun()
             else:
                 if st.button("↺ 還原預設值",use_container_width=True,key="reset_def"): st.session_state[ck_def]=True; st.rerun()
 
 # ══════════════════════════════════════════════════════
-# STUDENT SCREENS (kept for this portal)
+# STUDENT SCREENS (keep in app.py for admin preview)
 # ══════════════════════════════════════════════════════
 def screen_student_id():
-    if st.button("← Back",key="back_sid"): go("landing")
-    st.markdown("### 🎓 Oral Exam Registration")
-    name=st.text_input("Your full name / 姓名",value=st.session_state.user_name,placeholder="e.g. Maria Schmidt")
-    region=st.radio("Your location",options=[s["region"] for s in _C["sessions"]],
-        format_func=lambda r: next((f"{s['flag']} {s['name_en']} / {s['name_zh']}" for s in _C["sessions"] if s["region"]==r),r),
-        index=0,horizontal=True)
-    if st.button("查看可報名時段 →",type="primary",use_container_width=True):
-        name=name.strip()
-        if not name: st.error("Please enter your name"); return
-        st.session_state.user_name=name; st.session_state.region=region
-        load_open_slots()
-        b=db_get(f"students/{name}"); st.session_state.my_booking=b if isinstance(b,dict) else None
-        go("student_slots")
+    if st.button("← 返回",key="back_sid"): go("landing")
+    st.markdown("### 🎓 口試報名")
+    go("landing")
 
 def screen_student_slots():
-    name=st.session_state.user_name; region=st.session_state.region
-    settings=get_settings(); slot_counts=get_slot_counts()
-    max_per=int(settings.get("max_per_slot",1))
-    col_h,col_b=st.columns([4,1])
-    with col_h: st.markdown(f"### 🎓 {name}")
-    with col_b:
-        if st.button("← Back",key="back_ssl"): go("landing")
-    booking=st.session_state.my_booking
-    if booking and isinstance(booking,dict):
-        di,si=booking.get("di",0),booking.get("si",0)
-        sess_b=session_for_si(si); meet=get_meet_link(di,sess_b["region"])
-        st.markdown(f'<div style="background:#e1f5ee;border:1.5px solid #9fe1cb;border-radius:12px;padding:1rem 1.2rem;margin-bottom:1rem"><div style="font-weight:700;color:#085041;margin-bottom:5px">✅ Registered · 已成功報名</div><div style="font-size:1rem;font-weight:600;color:#085041">{DATES_EN[di] if di<N_D else "?"} · {ALL_SLOTS[si] if si<N_S else "?"} TST</div><div style="font-size:.88rem;color:#0f6e56;margin-top:4px">🕐 {ALL_LOCAL[si] if si<N_S else ""}</div></div>',unsafe_allow_html=True)
-        if meet:
-            st.markdown(f'<a href="{meet}" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#e8f5e9;color:#1b5e20;border:1.5px solid #81c784;border-radius:10px;padding:12px;text-decoration:none;font-size:.95rem;font-weight:600;margin-bottom:1rem">🎥 Join Google Meet / 加入 Google Meet</a>',unsafe_allow_html=True)
-    open_slots=st.session_state.open_slots
-    relevant=[o for o in open_slots if isinstance(o,dict) and SLOT_REG[o["si"]]==region]
-    if not relevant: st.warning("No slots available yet. 目前尚無開放時段。"); return
-    for o in relevant:
-        di,si=o["di"],o["si"]; booked=slot_counts.get(f"{di}_{si}",0)
-        is_full=max_per>0 and booked>=max_per
-        is_sel=booking and isinstance(booking,dict) and booking.get("di")==di and booking.get("si")==si
-        sess_o=session_for_si(si); meet=get_meet_link(di,sess_o["region"])
-        remaining=max(0,max_per-booked) if max_per>0 else None
-        rem_html=f'<span style="font-size:.75rem;background:{"#fcebeb" if is_full else "#eaf3de"};color:{"#a32d2d" if is_full else "#27500a"};padding:2px 7px;border-radius:4px">{"額滿 Full" if is_full else f"剩 {remaining} 名" if remaining is not None else ""}</span>'
-        st.markdown(f'<div style="border:{"2px solid #378add" if is_sel else "1px solid #dde"};border-radius:10px;padding:14px 16px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-weight:600">{"✓  " if is_sel else ""}{DATES_EN[di]} · {ALL_SLOTS[si]} TST</div><div style="font-size:.88rem;color:#555;margin-top:3px">🕐 {ALL_LOCAL[si]}</div></div>{rem_html}</div></div>',unsafe_allow_html=True)
-        if not is_full or is_sel:
-            if st.button(f"{'✓ Selected' if is_sel else 'Register'} — {DATES_EN[di]} {ALL_SLOTS[si]}",
-                         key=f"slot_{di}_{si}",use_container_width=True):
-                if not is_sel:
-                    b={"name":name,"region":region,"di":di,"si":si}
-                    db_set(f"students/{name}",b); st.session_state.my_booking=b
-                    st.success("✅ Registered! 報名成功！"); st.rerun()
-        else:
-            st.button(f"額滿 Full — {DATES_EN[di]} {ALL_SLOTS[si]}",key=f"full_{di}_{si}",disabled=True,use_container_width=True)
+    go("landing")
 
 # ══════════════════════════════════════════════════════
 # ROUTER
 # ══════════════════════════════════════════════════════
-ROUTES={"landing":screen_landing,"teacher_id":screen_teacher_id,"teacher_grid":screen_teacher_grid,
-        "admin_id":screen_admin_id,"admin_dash":screen_admin_dash,
-        "student_id":screen_student_id,"student_slots":screen_student_slots}
+ROUTES={
+    "landing":screen_landing,"teacher_id":screen_teacher_id,"teacher_schedule":screen_teacher_schedule,
+    "admin_id":screen_admin_id,"admin_dash":screen_admin_dash,
+    "student_id":screen_student_id,"student_slots":screen_student_slots,
+}
 ROUTES.get(st.session_state.screen,screen_landing)()
