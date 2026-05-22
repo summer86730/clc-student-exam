@@ -260,7 +260,11 @@ def session_style(sess_id):
 def load_students(): st.session_state.students=db_get_all("students")
 def load_open_slots():
     raw=db_get("open_slots") or []
-    st.session_state.open_slots=raw if isinstance(raw,list) else []
+    # Filter: only accept new format {di, tst, sess_id}; discard old {di, si} entries
+    if isinstance(raw,list):
+        st.session_state.open_slots=[o for o in raw if isinstance(o,dict) and "tst" in o]
+    else:
+        st.session_state.open_slots=[]
 
 # Session state
 for k,v in {"screen":"landing","user_name":"","pw_error":False,
@@ -393,8 +397,9 @@ def screen_admin_id():
             st.session_state.pw_error=False
             load_students(); load_open_slots()
             # Sync admin_open from stored open_slots
-            st.session_state.adm_open=[f"{o['di']}_{o['tst']}_{o.get('sess_id','')}"
-                                        for o in st.session_state.open_slots if isinstance(o,dict)]
+            st.session_state.adm_open=[
+                f"{o.get('di','')}_{o.get('tst','')}_{o.get('sess_id','')}"
+                for o in st.session_state.open_slots if isinstance(o,dict) and o.get('tst')]
             go("admin_dash")
         else: st.session_state.pw_error=True; st.rerun()
 
